@@ -13,11 +13,16 @@ import (
 
 var controllerHTTP = &http.Client{
 	Transport:     &http.Transport{},
-	Timeout:       2 * time.Second,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
 func (state instance) request(ctx context.Context, method, path string, body io.Reader, result any) error {
+	return state.requestWithin(ctx, 2*time.Second, method, path, body, result)
+}
+
+func (state instance) requestWithin(ctx context.Context, timeout time.Duration, method, path string, body io.Reader, result any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	host, _, err := net.SplitHostPort(state.Controller)
 	if err != nil || host != "127.0.0.1" {
 		return errors.New("invalid controller address")

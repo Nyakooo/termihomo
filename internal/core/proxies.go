@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -82,7 +83,7 @@ func (m Manager) Delay(ctx context.Context, name, target string) (int, error) {
 	query := url.Values{"url": {target}, "timeout": {"3000"}}
 	var reply struct{ Delay int }
 	path := "/proxies/" + url.PathEscape(name) + "/delay?" + query.Encode()
-	err = state.request(ctx, http.MethodGet, path, nil, &reply)
+	err = state.requestWithin(ctx, 5*time.Second, http.MethodGet, path, nil, &reply)
 	return reply.Delay, err
 }
 

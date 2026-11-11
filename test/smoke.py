@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import struct
@@ -37,6 +38,8 @@ class LocalServer(http.server.BaseHTTPRequestHandler):
     subscription = profile("Pick")
 
     def do_HEAD(self):
+        if self.path == "/delay":
+            time.sleep(2.2)
         self.send_response(200)
         self.end_headers()
 
@@ -97,12 +100,14 @@ def smoke(binary, directory, base):
         except urllib.error.HTTPError as error:
             assert error.code == 401
         assert command("stop", ok=False).returncode == 2
-        terminal_smoke(binary, env, running, status, request)
+        terminal_smoke(binary, env, running, status, request, command)
 
         LocalServer.subscription = b"broken: [\n"
         invalid = command("profile", "update", "--yes", ok=False)
         assert invalid.returncode == 1 and token not in invalid.stderr
         request(running)
+
+        running = reject_reload(directory, command, status, request, running)
 
         if os.geteuid() != 0:
             # Prevent only the final profile record write. The managed
@@ -125,7 +130,7 @@ def smoke(binary, directory, base):
         assert '"Next"' in command("proxy", "list").stdout
         command("proxy", "select", "Next", "DIRECT")
         request(running)
-        assert " ms" in command("proxy", "test", "DIRECT", f"{base}/echo").stdout
+        assert " ms" in command("proxy", "test", "DIRECT", f"{base}/delay").stdout
         assert Path(command("config", "backup").stdout.strip()).stat().st_mode & 0o777 == 0o600
         assert token not in command("logs").stdout
 
@@ -147,7 +152,51 @@ def smoke(binary, directory, base):
     assert status()["state"] == "Stopped"
 
 
-def terminal_smoke(binary, env, running, status, request):
+def reject_reload(directory, command, status, request, running):
+    class Controller(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            upstream = urllib.request.Request(
+                f"http://{running['controller']}{self.path}",
+                headers={"Authorization": self.headers["Authorization"]},
+            )
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(upstream, timeout=2) as response:
+                self.send_response(response.status)
+                self.end_headers()
+                self.wfile.write(response.read())
+
+        def do_PUT(self):
+            assert self.path == "/configs"
+            self.send_response(503)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    # Inject a controller failure at the HTTP boundary while forwarding the
+    # status and selector reads to the real kernel.
+    instance_path = directory / "data" / "termihomo" / "instance.json"
+    record = json.loads(instance_path.read_text())
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), Controller) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        record["Controller"] = f"127.0.0.1:{server.server_port}"
+        instance_path.write_text(json.dumps(record))
+        LocalServer.subscription = profile("Rejected")
+        try:
+            failure = command("profile", "update", "--yes", ok=False)
+        finally:
+            server.shutdown()
+    assert failure.returncode == 1 and "restored previous configuration" in failure.stderr, failure.stderr
+    assert "HTTP 503" in failure.stderr, failure.stderr
+    restored = status()
+    assert restored["state"] == "Running" and restored["pid"] != running["pid"], restored
+    assert restored["proxy"] == running["proxy"], restored
+    assert '"Pick"' in command("proxy", "list").stdout
+    request(restored)
+    return restored
+
+
+def terminal_smoke(binary, env, running, status, request, command):
     master, slave = pty.openpty()
     original = termios.tcgetattr(slave)
     process = None
@@ -164,13 +213,15 @@ def terminal_smoke(binary, env, running, status, request):
 
     def expect(text):
         deadline = time.monotonic() + 12
-        needle = text.encode()
-        while needle not in seen:
+        needle = re.compile(re.escape(text.encode()) if isinstance(text, str) else text)
+        match = needle.search(seen)
+        while match is None:
             if time.monotonic() >= deadline:
                 raise AssertionError(f"terminal did not show {text!r}: {seen[-500:]!r}")
             if select.select([master], [], [], 0.15)[0]:
                 seen.extend(os.read(master, 65536))
-        del seen[:seen.index(needle) + len(needle)]
+                match = needle.search(seen)
+        del seen[:match.end()]
 
     def key(data):
         os.write(master, data)
@@ -181,20 +232,27 @@ def terminal_smoke(binary, env, running, status, request):
         expect("Running")
         expect("total")
         assert status()["pid"] == running["pid"]
+        key(b"2")
+        expect("DIRECT")
         key(b"3")
         expect("Pick")
         key(b"j\r")  # Pick follows the built-in GLOBAL group.
         expect("Enter select")
         key(b"j\r")  # DIRECT follows REJECT in the fixture.
-        expect("Select DIRECT complete")
+        deadline = time.monotonic() + 12
+        while '"Pick"\tSelector\t"DIRECT"' not in command("proxy", "list").stdout:
+            assert time.monotonic() < deadline, "terminal did not select DIRECT"
+            time.sleep(0.1)
         key(b"6")
         expect("Mihomo logs")
         request(running)
         expect("Pick[DIRECT]")
+        key(b"5")
+        expect(rb"total .*?(?:[1-9][0-9]*\.[0-9]|0\.[1-9]) (?:B|KiB|MiB)")
         resize(37, 10)
         process.send_signal(signal.SIGWINCH)
-        key(b"5")
-        expect("Termihomo  /  Traffic")
+        key(b"1")
+        expect("Overview")
         key(b"q")
         assert process.wait(timeout=5) == 0
         assert termios.tcgetattr(slave) == original

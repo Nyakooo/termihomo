@@ -212,7 +212,7 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 }
 
 func (m Manager) reload(ctx context.Context, state instance) error {
-	if err := state.request(ctx, http.MethodPut, "/configs", bytes.NewBufferString("{}"), nil); err != nil {
+	if err := state.requestWithin(ctx, 20*time.Second, http.MethodPut, "/configs", bytes.NewBufferString("{}"), nil); err != nil {
 		return err
 	}
 	return m.ready(ctx, state)
