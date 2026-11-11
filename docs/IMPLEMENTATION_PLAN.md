@@ -365,6 +365,17 @@ CLI 与 TUI 必须使用同一组 Application Services。
 - 测试通过的功能。
 - 不支持或受限的功能。
 
+### V0.1 验收记录
+
+2026-11-11，代码版本 `19bb3b6` 使用 Go 1.26.11 构建，`go test ./...`、竞态检查与 `go vet ./...` 通过。下列环境均运行了 `python3 test/smoke.py <termihomo>`，脚本退出码为 0。
+
+| 目标 | 实测环境 |
+|---|---|
+| Linux AMD64 | Ubuntu 26.04.1，AMD64 主机 |
+| Linux ARM64 | Ubuntu 24.04.5，Linux 6.8.0-147-generic，QEMU 10.2.1 整机仿真，客体 `uname -m` 为 `aarch64` |
+
+两次验收均以普通用户从空数据目录开始，下载并校验 Mihomo v1.19.34。脚本实测认证、订阅加载、节点列表与切换、真实代理请求、流量和日志、TUI 退出及重连、Controller 拒绝重载后的旧配置恢复，以及内核异常退出检测。GitHub Actions 的两个原生架构运行器配置了相同的脚本。
+
 ## 11. Codex 执行规则
 
 Codex 实施时必须遵守：
