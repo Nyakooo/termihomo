@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
@@ -52,7 +53,7 @@ func (m Manager) Install(ctx context.Context) error {
 		arch = "arm64"
 		digest = "daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
 	default:
-		return errors.New("no Mihomo release for this architecture")
+		return i18n.Message("no Mihomo release for this architecture")
 	}
 	asset := fmt.Sprintf("https://github.com/MetaCubeX/mihomo/releases/download/%s/mihomo-linux-%s-%s.gz", Version, arch, Version)
 	client := &http.Client{Timeout: 2 * time.Minute}
@@ -62,11 +63,11 @@ func (m Manager) Install(ctx context.Context) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New("could not download Mihomo from the official release")
+		return i18n.Message("could not download Mihomo from the official release")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download Mihomo: HTTP %d", resp.StatusCode)
+		return i18n.Errorf("download Mihomo: HTTP %d", resp.StatusCode)
 	}
 
 	dir := filepath.Dir(m.binary())
@@ -86,7 +87,7 @@ func (m Manager) Install(ctx context.Context) error {
 		return err
 	}
 	if size > archiveLimit || hex.EncodeToString(hash.Sum(nil)) != digest {
-		return errors.New("Mihomo archive size or SHA-256 verification failed")
+		return i18n.Message("Mihomo archive size or SHA-256 verification failed")
 	}
 	if _, err := archive.Seek(0, io.SeekStart); err != nil {
 		return err
@@ -108,7 +109,7 @@ func (m Manager) Install(ctx context.Context) error {
 		return err
 	}
 	if size == 0 || size > binaryLimit {
-		return errors.New("unexpected Mihomo binary size")
+		return i18n.Message("unexpected Mihomo binary size")
 	}
 	if err := bin.Chmod(0o700); err != nil {
 		return err

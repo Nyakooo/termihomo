@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"golang.org/x/sys/unix"
 )
 
@@ -42,7 +42,7 @@ func (m Manager) readProfile() (profile, error) {
 		return current, err
 	}
 	if err := json.Unmarshal(body, &current); err != nil {
-		return current, errors.New("cannot read the saved profile")
+		return current, i18n.Message("cannot read the saved profile")
 	}
 	return current, nil
 }
@@ -55,12 +55,12 @@ func (m Manager) Profile() (ProfileInfo, error) {
 func (m Manager) ImportProfile(ctx context.Context, path string) error {
 	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
-		return errors.New("cannot open the profile file")
+		return i18n.Message("cannot open the profile file")
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("profile path must be a regular file")
+		return i18n.Message("profile path must be a regular file")
 	}
 	body, err := readProfileBody(file)
 	if err != nil {
@@ -82,7 +82,7 @@ func (m Manager) UpdateProfile(ctx context.Context) error {
 			return err
 		}
 		if current.URL == "" {
-			return errors.New("no subscription is configured")
+			return i18n.Message("no subscription is configured")
 		}
 		return m.fetchSubscription(ctx, current.URL)
 	})
@@ -91,10 +91,10 @@ func (m Manager) UpdateProfile(ctx context.Context) error {
 func readProfileBody(reader io.Reader) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(reader, profileLimit+1))
 	if err != nil {
-		return nil, errors.New("cannot read profile contents")
+		return nil, i18n.Message("cannot read profile contents")
 	}
 	if len(body) == 0 || len(body) > profileLimit {
-		return nil, errors.New("profile must be between 1 byte and 8 MiB")
+		return nil, i18n.Message("profile must be between 1 byte and 8 MiB")
 	}
 	return body, nil
 }
@@ -102,7 +102,7 @@ func readProfileBody(reader io.Reader) ([]byte, error) {
 func (m Manager) fetchSubscription(ctx context.Context, source string) error {
 	parsed, err := url.Parse(source)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
-		return errors.New("subscription requires a valid HTTP or HTTPS URL")
+		return i18n.Message("subscription requires a valid HTTP or HTTPS URL")
 	}
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -116,16 +116,16 @@ func (m Manager) fetchSubscription(ctx context.Context, source string) error {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
-		return errors.New("invalid subscription request")
+		return i18n.Message("invalid subscription request")
 	}
 	req.Header.Set("User-Agent", "mihomo/"+Version+" Termihomo")
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New("subscription download failed")
+		return i18n.Message("subscription download failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("subscription server returned HTTP %d", resp.StatusCode)
+		return i18n.Errorf("subscription server returned HTTP %d", resp.StatusCode)
 	}
 	body, err := readProfileBody(resp.Body)
 	if err != nil {
@@ -136,7 +136,7 @@ func (m Manager) fetchSubscription(ctx context.Context, source string) error {
 
 func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	if _, err := os.Stat(m.binary()); errors.Is(err, os.ErrNotExist) {
-		return errors.New("install Mihomo before importing a profile")
+		return i18n.Message("install Mihomo before importing a profile")
 	} else if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 		return atomicWrite(m.profilePath(), record)
 	}
 	if err := m.ready(ctx, state); err != nil {
-		return errors.New("cannot update an unhealthy Mihomo instance")
+		return i18n.Message("cannot update an unhealthy Mihomo instance")
 	}
 	choices, err := state.proxies(ctx)
 	if err != nil {
@@ -230,12 +230,12 @@ func (m Manager) pendingPath() string {
 
 func (m Manager) failProfileChange(state instance, pending profileChange, cause error) error {
 	if err := m.restoreConfig(state, pending); err != nil {
-		return fmt.Errorf("profile update failed and recovery is incomplete: %w", err)
+		return i18n.Wrap("profile update failed and recovery is incomplete: %s", err)
 	}
 	if err := os.Remove(m.pendingPath()); err != nil {
-		return fmt.Errorf("previous configuration restored, but could not clear recovery state: %w", err)
+		return i18n.Wrap("previous configuration restored, but could not clear recovery state: %s", err)
 	}
-	return fmt.Errorf("profile update failed; restored previous configuration: %w", cause)
+	return i18n.Wrap("profile update failed; restored previous configuration: %s", cause)
 }
 
 func (m Manager) recoverPendingProfile() error {
@@ -248,7 +248,7 @@ func (m Manager) recoverPendingProfile() error {
 	}
 	var pending profileChange
 	if err := json.Unmarshal(body, &pending); err != nil {
-		return errors.New("cannot read pending profile change")
+		return i18n.Message("cannot read pending profile change")
 	}
 	record, err := os.ReadFile(m.profilePath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -260,7 +260,7 @@ func (m Manager) recoverPendingProfile() error {
 			return err
 		}
 		if err := m.restoreConfig(state, pending); err != nil {
-			return fmt.Errorf("recover interrupted profile change: %w", err)
+			return i18n.Wrap("recover interrupted profile change: %s", err)
 		}
 	}
 	return os.Remove(m.pendingPath())
@@ -268,7 +268,7 @@ func (m Manager) recoverPendingProfile() error {
 
 func (m Manager) restoreConfig(state instance, pending profileChange) error {
 	if err := atomicWrite(m.configPath(), pending.Previous); err != nil {
-		return fmt.Errorf("restore previous configuration file: %w", err)
+		return i18n.Wrap("restore previous configuration file: %s", err)
 	}
 	if state.PID == 0 {
 		return nil
@@ -278,24 +278,24 @@ func (m Manager) restoreConfig(state instance, pending profileChange) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	if err := m.stop(); err != nil {
-		return fmt.Errorf("profile update failed and Mihomo could not be stopped for recovery: %w", err)
+		return i18n.Wrap("profile update failed and Mihomo could not be stopped for recovery: %s", err)
 	}
 	if err := m.startOn(ctx, state.Proxy); err != nil {
-		return fmt.Errorf("profile update failed and the previous profile could not be restarted: %w", err)
+		return i18n.Wrap("profile update failed and the previous profile could not be restarted: %s", err)
 	}
 	restored, err := m.runningInstance()
 	if err != nil {
-		return fmt.Errorf("profile update failed and the restored process is unavailable: %w", err)
+		return i18n.Wrap("profile update failed and the restored process is unavailable: %s", err)
 	}
 	for _, choice := range pending.Choices {
 		if choice.Type == "Selector" && choice.Now != "" {
 			if err := restored.selectProxy(ctx, choice.Name, choice.Now); err != nil {
-				return fmt.Errorf("previous profile is running, but a selector choice could not be restored: %w", err)
+				return i18n.Wrap("previous profile is running, but a selector choice could not be restored: %s", err)
 			}
 		}
 	}
 	if err := m.ready(ctx, restored); err != nil {
-		return fmt.Errorf("profile update failed and recovery could not be verified: %w", err)
+		return i18n.Wrap("profile update failed and recovery could not be verified: %s", err)
 	}
 	m.recordLifecycle("Previous profile restored after update failure")
 	return nil

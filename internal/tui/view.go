@@ -13,12 +13,12 @@ import (
 )
 
 func (m *model) View() tea.View {
-	title := "Termihomo  /  " + pages[m.page]
+	title := "Termihomo  /  " + m.lang.Text(pages[m.page])
 	header := []string{title}
 	if m.width >= 75 {
 		tabs := make([]string, len(pages))
 		for index, label := range pages {
-			tabs[index] = fmt.Sprintf("%d %s", index+1, label)
+			tabs[index] = fmt.Sprintf("%d %s", index+1, m.lang.Text(label))
 			if page(index) == m.page {
 				tabs[index] = "[" + tabs[index] + "]"
 			}
@@ -26,7 +26,7 @@ func (m *model) View() tea.View {
 		header = append(header, strings.Join(tabs, "  "))
 	}
 	header = append(header, strings.Repeat("─", max(0, m.width)))
-	footer := fmt.Sprintf("Tab pages  ·  %s help  ·  %s quit", m.settings.key("help"), m.settings.key("quit"))
+	footer := fmt.Sprintf(m.lang.Text("Tab pages  ·  %s help  ·  %s quit"), m.settings.key("help"), m.settings.key("quit"))
 	if m.feedback != "" {
 		footer = m.feedback
 	}
@@ -34,9 +34,9 @@ func (m *model) View() tea.View {
 	case m.confirm != nil:
 		footer = m.confirmLabel + "?  [y/N]"
 	case m.form == "Subscription URL":
-		footer = fmt.Sprintf("Subscription URL (hidden, %d chars)  ·  Enter save / Esc cancel", len(m.input))
+		footer = fmt.Sprintf(m.lang.Text("Subscription URL (hidden, %d chars)  ·  Enter save / Esc cancel"), len(m.input))
 	case m.form != "":
-		footer = fmt.Sprintf("%s › %s  ·  Enter save / Esc cancel", m.form, string(m.input))
+		footer = fmt.Sprintf(m.lang.Text("%s › %s  ·  Enter save / Esc cancel"), m.lang.Text(m.form), string(m.input))
 	}
 
 	available := max(0, m.height-len(header)-1)
@@ -63,12 +63,12 @@ func (m *model) View() tea.View {
 func (m *model) body(height int) []string {
 	if m.help {
 		return []string{
-			"Tab / ← →   Switch page", "1–7         Open page", "↑ ↓ / j k   Move selection",
-			m.settings.key("refresh") + "           Refresh", m.settings.key("search") + "           Search proxies or groups",
-			m.settings.key("sort") + " / " + m.settings.key("test") + "       Sort by delay / Test selected proxy",
-			"Enter       Open Selector or choose option", "Esc         Close selection or clear filter",
-			"Profile     a subscription · i import · u update", "Core        i install · a start · x stop · R restart",
-			"Logs        " + m.settings.key("log-level") + " cycle minimum log level", m.settings.key("quit") + "           Quit and keep Mihomo running",
+			m.lang.Text("Tab / ← →   Switch page"), m.lang.Text("1–7         Open page"), m.lang.Text("↑ ↓ / j k   Move selection"),
+			m.settings.key("refresh") + m.lang.Text("           Refresh"), m.settings.key("search") + m.lang.Text("           Search proxies or groups"),
+			m.settings.key("sort") + " / " + m.settings.key("test") + m.lang.Text("       Sort by delay / Test selected proxy"),
+			m.lang.Text("Enter       Open Selector or choose option"), m.lang.Text("Esc         Close selection or clear filter"),
+			m.lang.Text("Profile     a subscription · i import · u update"), m.lang.Text("Core        i install · a start · x stop · R restart"),
+			m.lang.Text("Logs        ") + m.settings.key("log-level") + m.lang.Text(" cycle minimum log level"), m.settings.key("quit") + m.lang.Text("           Quit and keep Mihomo running"),
 		}
 	}
 	s := m.snapshot.status
@@ -82,49 +82,49 @@ func (m *model) body(height int) []string {
 		if profile == "" {
 			profile = "Built-in DIRECT"
 		}
-		rows := []string{"Mihomo       " + state + "  " + s.Installed, "Profile      " + profile}
+		rows := []string{"Mihomo       " + m.lang.Text(state) + "  " + s.Installed, m.lang.Text("Profile      ") + m.lang.Text(profile)}
 		if s.State == "Running" {
 			rows = append(rows,
-				"Uptime       "+time.Since(s.Started).Truncate(time.Second).String(),
-				"Proxy        "+s.Proxy,
-				"Mode         "+m.snapshot.overview.Mode,
-				fmt.Sprintf("Connections %d", m.snapshot.overview.Connections),
+				m.lang.Text("Uptime       ")+time.Since(s.Started).Truncate(time.Second).String(),
+				m.lang.Text("Proxy        ")+s.Proxy,
+				m.lang.Text("Mode         ")+m.lang.Text(m.snapshot.overview.Mode),
+				fmt.Sprintf(m.lang.Text("Connections %d"), m.snapshot.overview.Connections),
 			)
 			for _, p := range m.snapshot.proxies {
 				if p.Type == "Selector" && p.Name != "GLOBAL" {
-					rows = append(rows, "Selected     "+p.Name+" → "+p.Now)
+					rows = append(rows, m.lang.Text("Selected     ")+p.Name+" → "+p.Now)
 					break
 				}
 			}
 		}
 		if m.snapshot.err != nil {
-			rows = append(rows, "Error        "+m.snapshot.err.Error())
+			rows = append(rows, m.lang.Text("Error        ")+m.lang.Error(m.snapshot.err))
 		}
 		return append(rows, "", m.trafficLine())
 	case proxies, groups:
 		return m.proxyRows(height)
 	case profiles:
 		p := m.snapshot.profile
-		rows := []string{"a  Add subscription    i  Import local YAML    u  Update"}
+		rows := []string{m.lang.Text("a  Add subscription    i  Import local YAML    u  Update")}
 		if p.Source == "" {
-			return append(rows, "", "No profile configured. The default routes directly.")
+			return append(rows, "", m.lang.Text("No profile configured. The default routes directly."))
 		}
-		return append(rows, "", "Source    "+p.Source, "Updated   "+p.Updated.Format(time.DateTime))
+		return append(rows, "", m.lang.Text("Source    ")+m.lang.Text(p.Source), m.lang.Text("Updated   ")+p.Updated.Format(time.DateTime))
 	case traffic:
 		return []string{
 			m.trafficLine(), "",
-			"Upload    " + m.chart(true),
-			"Download  " + m.chart(false),
+			m.lang.Text("Upload    ") + m.chart(true),
+			m.lang.Text("Download  ") + m.chart(false),
 		}
 	case logs:
 		return m.logRows(height)
 	case corePage:
-		rows := []string{"i  Install    a  Start    x  Stop    R  Restart", "", "State       " + s.State, "Version     " + s.Installed}
+		rows := []string{m.lang.Text("i  Install    a  Start    x  Stop    R  Restart"), "", m.lang.Text("State       ") + m.lang.Text(s.State), m.lang.Text("Version     ") + s.Installed}
 		if s.PID != 0 {
-			rows = append(rows, fmt.Sprintf("PID         %d", s.PID), "Controller  "+s.Controller, "Proxy       "+s.Proxy)
+			rows = append(rows, fmt.Sprintf("PID         %d", s.PID), m.lang.Text("Controller  ")+s.Controller, m.lang.Text("Proxy       ")+s.Proxy)
 		}
 		if m.snapshot.err != nil {
-			rows = append(rows, "Error       "+m.snapshot.err.Error())
+			rows = append(rows, m.lang.Text("Error       ")+m.lang.Error(m.snapshot.err))
 		}
 		return rows
 	}
@@ -163,9 +163,9 @@ func (m *model) proxyRows(height int) []string {
 			if item.Name != m.groupName {
 				continue
 			}
-			hint := " · Enter select / Esc back"
+			hint := m.lang.Text(" · Enter select / Esc back")
 			if item.Type != "Selector" {
-				hint = " · Automatic selection / Esc back"
+				hint = m.lang.Text(" · Automatic selection / Esc back")
 			}
 			rows := []string{item.Name + hint}
 			options := make([]string, len(item.All))
@@ -178,18 +178,18 @@ func (m *model) proxyRows(height int) []string {
 			return append(rows, viewport(options, m.choice, height-1)...)
 		}
 	}
-	rows := []string{fmt.Sprintf("%s search  ·  %s sort by delay  ·  %s test", m.settings.key("search"), m.settings.key("sort"), m.settings.key("test"))}
+	rows := []string{fmt.Sprintf(m.lang.Text("%s search  ·  %s sort by delay  ·  %s test"), m.settings.key("search"), m.settings.key("sort"), m.settings.key("test"))}
 	if m.page == groups {
-		rows[0] = m.settings.key("search") + " search  ·  Enter open group"
+		rows[0] = m.settings.key("search") + m.lang.Text(" search  ·  Enter open group")
 	}
 	if m.filter != "" {
-		rows = append(rows, "Filter  "+m.filter)
+		rows = append(rows, m.lang.Text("Filter  ")+m.filter)
 	}
 	if len(items) == 0 {
 		if m.snapshot.status.State == "Running" {
-			return append(rows, "No matching entries")
+			return append(rows, m.lang.Text("No matching entries"))
 		}
-		return append(rows, "Start Mihomo to load entries")
+		return append(rows, m.lang.Text("Start Mihomo to load entries"))
 	}
 	var entries []string
 	for _, item := range items {
@@ -199,7 +199,7 @@ func (m *model) proxyRows(height int) []string {
 		} else if delay := lastDelay(item); delay > 0 {
 			line += fmt.Sprintf("  ·  %d ms", delay)
 		} else if !item.Alive {
-			line += "  ·  unavailable"
+			line += m.lang.Text("  ·  unavailable")
 		}
 		entries = append(entries, line)
 	}
@@ -225,13 +225,13 @@ func viewport(lines []string, cursor, height int) []string {
 
 func (m *model) trafficLine() string {
 	if len(m.rates) == 0 {
-		return "Traffic      Waiting for samples"
+		return m.lang.Text("Traffic      Waiting for samples")
 	}
 	current := m.rates[len(m.rates)-1]
-	line := fmt.Sprintf("↑ %s/s  ↓ %s/s  ·  total ↑ %s ↓ %s",
+	line := fmt.Sprintf(m.lang.Text("↑ %s/s  ↓ %s/s  ·  total ↑ %s ↓ %s"),
 		bytesLabel(current.Up), bytesLabel(current.Down), bytesLabel(current.UpTotal), bytesLabel(current.DownTotal))
 	if !m.trafficLive {
-		line = "Stale · " + line
+		line = m.lang.Text("Stale · ") + line
 	}
 	return line
 }
@@ -273,16 +273,16 @@ func (m *model) logRows(height int) []string {
 	for _, entry := range m.logEntries {
 		for i, level := range levels {
 			if i >= m.logLevel && strings.EqualFold(entry.Type, level) {
-				entries = append(entries, "["+entry.Type+"] "+entry.Payload)
+				entries = append(entries, "["+m.lang.Text(entry.Type)+"] "+entry.Payload)
 			}
 		}
 	}
-	header := "Mihomo logs  ·  " + levels[m.logLevel] + "+  ·  " + m.settings.key("log-level") + " filter"
+	header := m.lang.Text("Mihomo logs  ·  ") + m.lang.Text(levels[m.logLevel]) + "+  ·  " + m.settings.key("log-level") + m.lang.Text(" filter")
 	if !m.logsLive {
-		header += "  ·  Waiting for live logs"
+		header += m.lang.Text("  ·  Waiting for live logs")
 	}
 	if len(entries) > 0 && !m.logsLive {
-		header += " (showing stale data)"
+		header += m.lang.Text(" (showing stale data)")
 	}
 	return append([]string{header}, entries[max(0, len(entries)-max(0, height-1)):]...)
 }

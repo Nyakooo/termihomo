@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/url"
 	"sort"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,11 +25,11 @@ type Proxy struct {
 func (m Manager) runningInstance() (instance, error) {
 	state, err := m.readInstance()
 	if err != nil {
-		return state, errors.New("no managed Mihomo instance is available")
+		return state, i18n.Message("no managed Mihomo instance is available")
 	}
 	fd, err := state.openProcess()
 	if err != nil {
-		return state, errors.New("managed Mihomo is not running")
+		return state, i18n.Message("managed Mihomo is not running")
 	}
 	unix.Close(fd)
 	return state, nil
@@ -69,7 +69,7 @@ func (m Manager) Select(ctx context.Context, group, choice string) error {
 			return err
 		}
 		if info.Type != "Selector" {
-			return errors.New("only Selector groups accept manual selection")
+			return i18n.Message("only Selector groups accept manual selection")
 		}
 		return state.selectProxy(ctx, group, choice)
 	})

@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -34,7 +35,7 @@ func (m Manager) StreamLogs(ctx context.Context, level string, receive func(LogE
 	switch level {
 	case "debug", "info", "warning", "error":
 	default:
-		return errors.New("unsupported log level")
+		return i18n.Message("unsupported log level")
 	}
 	clean := m.logRedactor()
 	return stream(ctx, m, "/logs?level="+level, func(entry LogEntry) {
@@ -51,7 +52,7 @@ func stream[T any](ctx context.Context, m Manager, path string, receive func(T))
 	}
 	host, _, err := net.SplitHostPort(state.Controller)
 	if err != nil || host != "127.0.0.1" {
-		return errors.New("invalid controller address")
+		return i18n.Message("invalid controller address")
 	}
 	client := &http.Client{Transport: controllerHTTP.Transport, CheckRedirect: controllerHTTP.CheckRedirect}
 	dial, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -61,7 +62,7 @@ func stream[T any](ctx context.Context, m Manager, path string, receive func(T))
 	})
 	cancel()
 	if err != nil {
-		return errors.New("could not connect to Mihomo event stream")
+		return i18n.Message("could not connect to Mihomo event stream")
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(1 << 20)
@@ -75,7 +76,7 @@ func stream[T any](ctx context.Context, m Manager, path string, receive func(T))
 		err := wsjson.Read(read, conn, &event)
 		cancel()
 		if err != nil {
-			return errors.New("Mihomo event stream disconnected")
+			return i18n.Message("Mihomo event stream disconnected")
 		}
 		receive(event)
 	}

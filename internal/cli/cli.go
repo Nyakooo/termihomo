@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"github.com/Nyakooo/termihomo/internal/core"
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/Nyakooo/termihomo/internal/platform"
 	"github.com/Nyakooo/termihomo/internal/tui"
 	"github.com/Nyakooo/termihomo/internal/version"
 	"github.com/charmbracelet/x/term"
 )
 
-const help = `Usage: termihomo [command]
+const help = `Usage: termihomo [--lang en|zh-CN] [command]
 
 Commands:
   init       Initialize private configuration, data and log directories
@@ -44,25 +45,65 @@ Commands:
   help       Show this help
 `
 
+const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
+
+命令：
+  init                        初始化私有配置、数据和日志目录
+  install                     下载并校验支持的 Mihomo 版本
+  start                       在后台启动托管的 Mihomo
+  stop [--yes]                停止内核
+  restart [--yes]             重启内核
+  status [--json]             查看进程和控制接口状态
+  profile list                查看当前配置
+  profile import FILE [--yes] 导入本地 Mihomo YAML
+  profile add URL [--yes]     添加订阅（用 - 从标准输入读取地址）
+  profile update [--yes]      刷新订阅
+  proxy list                  列出节点和策略组
+  proxy select GROUP OPTION   在 Selector 策略组中选择选项
+  proxy test NAME [URL]        测试节点延迟
+  logs [-f]                   查看或跟踪日志
+  config check                校验托管配置
+  config backup               备份生成的配置
+  version                     显示版本
+  help                        显示帮助
+`
+
 func Run(args []string, stdout, stderr io.Writer) int {
 	return RunWithInput(args, strings.NewReader(""), stdout, stderr)
 }
 
 func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	lang := i18n.FromEnvironment()
+	if len(args) > 0 && args[0] == "--lang" {
+		var ok bool
+		if len(args) >= 2 {
+			lang, ok = i18n.Parse(args[1])
+		}
+		if !ok {
+			fmt.Fprintln(stderr, i18n.FromEnvironment().Text("use --lang en or --lang zh-CN"))
+			return 2
+		}
+		args = args[2:]
+	}
+
 	if len(args) == 0 && isTerminal(stdin) && isTerminal(stdout) {
 		paths, err := platform.ResolvePaths()
 		if err == nil {
-			err = tui.Run(core.Manager{Paths: paths}, stdin, stdout)
+			err = tui.Run(core.Manager{Paths: paths}, stdin, stdout, lang)
 		}
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			fmt.Fprintln(stderr, lang.Error(err))
 			return 1
 		}
 		return 0
 	}
 	switch {
 	case len(args) == 0 || (len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h")):
-		fmt.Fprint(stdout, help)
+		if lang == i18n.Chinese {
+			fmt.Fprint(stdout, helpZH)
+		} else {
+			fmt.Fprint(stdout, help)
+		}
 		return 0
 	case len(args) == 1 && args[0] == "version":
 		fmt.Fprintf(stdout, "termihomo %s (%s/%s)\n", version.Value, runtime.GOOS, runtime.GOARCH)
@@ -75,17 +116,17 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		// Keep raw errors, paths and user arguments out of structured logs.
 		log := slog.New(slog.NewJSONHandler(stderr, nil))
 		if err != nil {
-			log.Error("could not initialize private application directories", "operation", "init", "hint", "check HOME, XDG paths and directory permissions")
+			log.Error(lang.Text("could not initialize private application directories"), "operation", "init", "hint", lang.Text("check HOME, XDG paths and directory permissions"))
 			return 1
 		}
-		log.Info("application directories ready", "operation", "init", "os", runtime.GOOS, "arch", runtime.GOARCH)
+		log.Info(lang.Text("application directories ready"), "operation", "init", "os", runtime.GOOS, "arch", runtime.GOARCH)
 		return 0
 	default:
-		return runCore(args, stdin, stdout, stderr)
+		return runCore(args, stdin, stdout, stderr, lang)
 	}
 }
 
-func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n.Language) int {
 	confirmed := len(args) >= 2 && args[len(args)-1] == "--yes"
 	if confirmed {
 		args = args[:len(args)-1]
@@ -93,13 +134,13 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	mayConfirm := args[0] == "stop" || args[0] == "restart" ||
 		(args[0] == "profile" && len(args) >= 2 && args[1] != "list")
 	if !validManagedCommand(args) || (confirmed && !mayConfirm) {
-		fmt.Fprintln(stderr, "unknown command or arguments; run termihomo --help")
+		fmt.Fprintln(stderr, lang.Text("unknown command or arguments; run termihomo --help"))
 		return 2
 	}
 
 	paths, err := platform.ResolvePaths()
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		fmt.Fprintln(stderr, lang.Error(err))
 		return 1
 	}
 	manager := core.Manager{Paths: paths}
@@ -107,17 +148,17 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if args[0] == "profile" && mayConfirm && args[1] != "update" {
 		info, err := manager.Profile()
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			fmt.Fprintln(stderr, lang.Error(err))
 			return 1
 		}
 		needsConfirmation = info.Source != ""
 	}
 	if needsConfirmation && !confirmed {
 		if !isTerminal(stdin) {
-			fmt.Fprintln(stderr, "confirmation required; use --yes for non-interactive execution")
+			fmt.Fprintln(stderr, lang.Text("confirmation required; use --yes for non-interactive execution"))
 			return 2
 		}
-		fmt.Fprint(stderr, "Apply this change? [y/N] ")
+		fmt.Fprint(stderr, lang.Text("Apply this change? [y/N] "))
 		answer, _ := bufio.NewReader(stdin).ReadString('\n')
 		if !strings.EqualFold(strings.TrimSpace(answer), "y") {
 			return 0
@@ -129,7 +170,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "install":
 		err = manager.Install(ctx)
 		if err == nil {
-			fmt.Fprintln(stdout, "Mihomo", core.Version, "installed")
+			fmt.Fprintf(stdout, lang.Text("Mihomo %s installed\n"), core.Version)
 		}
 	case "start":
 		err = manager.Start(ctx)
@@ -138,7 +179,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "restart":
 		err = manager.Restart(ctx)
 	case "logs":
-		err = runLogs(ctx, manager, len(args) == 2, stdout, stderr)
+		err = runLogs(ctx, manager, len(args) == 2, stdout, stderr, lang)
 	case "config":
 		if args[1] == "check" {
 			err = manager.CheckConfig(ctx)
@@ -150,7 +191,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 	case "profile":
-		err = runProfile(ctx, manager, args[1:], stdin, stdout)
+		err = runProfile(ctx, manager, args[1:], stdin, stdout, lang)
 	case "proxy":
 		err = runProxy(ctx, manager, args[1:], stdout)
 	case "status":
@@ -160,20 +201,20 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if len(args) == 2 {
 				err = json.NewEncoder(stdout).Encode(status)
 			} else {
-				fmt.Fprint(stdout, status.State)
+				fmt.Fprint(stdout, lang.Text(status.State))
 				if status.Installed != "" {
 					fmt.Fprint(stdout, " · Mihomo ", status.Installed)
 				}
 				if status.PID != 0 {
 					fmt.Fprintf(stdout, " · PID %d · %s", status.PID, status.Controller)
-					fmt.Fprint(stdout, " · Proxy ", status.Proxy)
+					fmt.Fprint(stdout, lang.Text(" · Proxy "), status.Proxy)
 				}
 				fmt.Fprintln(stdout)
 			}
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		fmt.Fprintln(stderr, lang.Error(err))
 		return 1
 	}
 	return 0
@@ -215,7 +256,7 @@ func validManagedCommand(args []string) bool {
 	return false
 }
 
-func runProfile(ctx context.Context, manager core.Manager, args []string, stdin io.Reader, stdout io.Writer) error {
+func runProfile(ctx context.Context, manager core.Manager, args []string, stdin io.Reader, stdout io.Writer, lang i18n.Language) error {
 	switch args[0] {
 	case "import":
 		return manager.ImportProfile(ctx, args[1])
@@ -225,7 +266,7 @@ func runProfile(ctx context.Context, manager core.Manager, args []string, stdin 
 			const limit = 16 << 10
 			body, err := io.ReadAll(io.LimitReader(stdin, limit+1))
 			if err != nil || len(body) > limit {
-				return fmt.Errorf("could not read subscription URL from stdin")
+				return i18n.Message("could not read subscription URL from stdin")
 			}
 			source = strings.TrimSpace(string(body))
 		}
@@ -238,9 +279,9 @@ func runProfile(ctx context.Context, manager core.Manager, args []string, stdin 
 		return err
 	}
 	if info.Source == "" {
-		fmt.Fprintln(stdout, "No profile configured")
+		fmt.Fprintln(stdout, lang.Text("No profile configured"))
 	} else {
-		fmt.Fprintf(stdout, "Active profile · %s · updated %s\n", info.Source, info.Updated.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(stdout, lang.Text("Active profile · %s · updated %s\n"), lang.Text(info.Source), info.Updated.Format("2006-01-02 15:04:05"))
 	}
 	return nil
 }
@@ -275,12 +316,16 @@ func runProxy(ctx context.Context, manager core.Manager, args []string, stdout i
 	return nil
 }
 
-func runLogs(ctx context.Context, manager core.Manager, follow bool, stdout, stderr io.Writer) error {
+func runLogs(ctx context.Context, manager core.Manager, follow bool, stdout, stderr io.Writer, lang i18n.Language) error {
 	lines, err := manager.RecentLogs()
 	if err != nil {
 		return err
 	}
 	for _, line := range lines {
+		timestamp, event, found := strings.Cut(line, " ")
+		if found {
+			line = timestamp + " " + lang.Text(event)
+		}
 		fmt.Fprintln(stdout, "[termihomo]", line)
 	}
 	if !follow {
@@ -288,12 +333,12 @@ func runLogs(ctx context.Context, manager core.Manager, follow bool, stdout, std
 	}
 	for ctx.Err() == nil {
 		err := manager.StreamLogs(ctx, "info", func(entry core.LogEntry) {
-			fmt.Fprintf(stdout, "[mihomo %s] %s\n", entry.Type, entry.Payload)
+			fmt.Fprintf(stdout, "[mihomo %s] %s\n", lang.Text(entry.Type), entry.Payload)
 		})
 		if ctx.Err() != nil {
 			break
 		}
-		fmt.Fprintln(stderr, err, "· retrying")
+		fmt.Fprintln(stderr, lang.Error(err), lang.Text("· retrying"))
 		select {
 		case <-ctx.Done():
 		case <-time.After(2 * time.Second):

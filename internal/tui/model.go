@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Nyakooo/termihomo/internal/core"
+	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
 type page int
@@ -46,6 +47,7 @@ type operation struct {
 
 type model struct {
 	manager       core.Manager
+	lang          i18n.Language
 	settings      settings
 	ctx           context.Context
 	snapshot      snapshot
@@ -71,14 +73,14 @@ type model struct {
 	logLevel      int
 }
 
-func Run(manager core.Manager, input io.Reader, output io.Writer) error {
+func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Language) error {
 	settings, err := loadSettings(manager.Paths.Config)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	m := &model{manager: manager, settings: settings, ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true}
+	m := &model{manager: manager, lang: lang, settings: settings, ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true}
 	program := tea.NewProgram(m, tea.WithInput(input), tea.WithOutput(output), tea.WithContext(ctx))
 	go reconnect(ctx, func() error {
 		return manager.StreamTraffic(ctx, func(event core.Traffic) { program.Send(event) })
@@ -154,12 +156,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snapshot = msg
 	case operation:
 		m.busy = false
-		m.feedback = msg.label + " complete"
+		m.feedback = fmt.Sprintf(m.lang.Text("%s complete"), msg.label)
 		if msg.detail != "" {
 			m.feedback = msg.label + " · " + msg.detail
 		}
 		if msg.err != nil {
-			m.feedback = "Error · " + msg.err.Error()
+			m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
 		}
 		if !m.refreshing {
 			m.refreshing = true
@@ -191,7 +193,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	key := msg.String()
 	if key == "ctrl+c" || (key == m.settings.key("quit") && m.form == "" && m.confirm == nil && !m.help) {
 		if m.busy {
-			m.feedback = "Wait for the current operation to finish"
+			m.feedback = m.lang.Text("Wait for the current operation to finish")
 			return nil
 		}
 		return tea.Quit
@@ -266,13 +268,13 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case corePage:
 		switch key {
 		case "i":
-			return m.act("Install Mihomo", func() error { return m.manager.Install(m.ctx) })
+			return m.act(m.lang.Text("Install Mihomo"), func() error { return m.manager.Install(m.ctx) })
 		case "a":
-			return m.act("Start Mihomo", func() error { return m.manager.Start(m.ctx) })
+			return m.act(m.lang.Text("Start Mihomo"), func() error { return m.manager.Start(m.ctx) })
 		case "x":
-			m.confirmLabel, m.confirm = "Stop Mihomo", m.manager.Stop
+			m.confirmLabel, m.confirm = m.lang.Text("Stop Mihomo"), m.manager.Stop
 		case "R":
-			m.confirmLabel, m.confirm = "Restart Mihomo", func() error { return m.manager.Restart(m.ctx) }
+			m.confirmLabel, m.confirm = m.lang.Text("Restart Mihomo"), func() error { return m.manager.Restart(m.ctx) }
 		}
 	case profiles:
 		switch key {
@@ -281,7 +283,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		case "i":
 			m.form, m.input = "Local YAML path", nil
 		case "u":
-			m.confirmLabel, m.confirm = "Update profile", func() error { return m.manager.UpdateProfile(m.ctx) }
+			m.confirmLabel, m.confirm = m.lang.Text("Update profile"), func() error { return m.manager.UpdateProfile(m.ctx) }
 		}
 	case groups:
 		if key == "enter" {
@@ -293,7 +295,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 			if len(items) > 0 {
 				name := items[min(m.cursor, len(items)-1)].Name
 				m.busy = true
-				m.feedback = "Testing " + safe(name) + "…"
+				m.feedback = fmt.Sprintf(m.lang.Text("Testing %s…"), safe(name))
 				return func() tea.Msg {
 					delay, err := m.manager.Delay(m.ctx, name, "https://www.gstatic.com/generate_204")
 					return operation{label: safe(name), detail: fmt.Sprintf("%d ms", delay), err: err}
@@ -318,12 +320,12 @@ func (m *model) selectGroup() tea.Cmd {
 	for _, group := range items {
 		if group.Name == m.groupName && len(group.All) > 0 {
 			if group.Type != "Selector" {
-				m.feedback = "This group chooses its option automatically"
+				m.feedback = m.lang.Text("This group chooses its option automatically")
 				return nil
 			}
 			choice := group.All[min(m.choice, len(group.All)-1)]
 			m.groupName = ""
-			return m.act("Select "+safe(choice), func() error { return m.manager.Select(m.ctx, group.Name, choice) })
+			return m.act(fmt.Sprintf(m.lang.Text("Select %s"), safe(choice)), func() error { return m.manager.Select(m.ctx, group.Name, choice) })
 		}
 	}
 	return nil
@@ -360,14 +362,14 @@ func (m *model) formKey(key, value string) tea.Cmd {
 			if input == "" {
 				return nil
 			}
-			label := "Import profile"
+			label := m.lang.Text("Import profile")
 			run := func() error { return m.manager.ImportProfile(m.ctx, input) }
 			if form == "Subscription URL" {
-				label = "Add subscription"
+				label = m.lang.Text("Add subscription")
 				run = func() error { return m.manager.AddSubscription(m.ctx, input) }
 			}
 			if m.snapshot.profile.Source != "" {
-				m.confirmLabel, m.confirm = label+" and replace the active profile", run
+				m.confirmLabel, m.confirm = fmt.Sprintf(m.lang.Text("%s and replace the active profile"), label), run
 				return nil
 			}
 			return m.act(label, run)

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"golang.org/x/sys/unix"
 )
 
@@ -68,7 +69,7 @@ func (m Manager) readInstance() (instance, error) {
 	if err == nil {
 		err = json.Unmarshal(body, &state)
 		if err == nil && (state.PID <= 0 || state.Identity == "" || state.Secret == "") {
-			err = errors.New("invalid instance state")
+			err = i18n.Message("invalid instance state")
 		}
 	}
 	return state, err
@@ -81,7 +82,7 @@ func processIdentity(pid int) (string, error) {
 	}
 	end := strings.LastIndexByte(string(stat), ')')
 	if end < 0 {
-		return "", errors.New("invalid process record")
+		return "", i18n.Message("invalid process record")
 	}
 	fields := strings.Fields(string(stat[end+1:]))
 	if len(fields) < 20 || fields[0] == "Z" || fields[0] == "X" {
@@ -198,11 +199,11 @@ func (m Manager) startOn(ctx context.Context, proxyAddress string) error {
 	}
 	switch status.State {
 	case "NotInstalled":
-		return errors.New("install Mihomo first with termihomo install")
+		return i18n.Message("install Mihomo first with termihomo install")
 	case "Running":
 		return nil
 	case "Degraded":
-		return errors.New("Mihomo is alive but its controller is unavailable; use restart")
+		return i18n.Message("Mihomo is alive but its controller is unavailable; use restart")
 	}
 
 	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
@@ -287,12 +288,12 @@ func (m Manager) startOn(ctx context.Context, proxyAddress string) error {
 		}
 		if _, err := processIdentity(state.PID); err != nil {
 			m.recordLifecycle("Mihomo exited during startup")
-			return errors.New("Mihomo exited during startup")
+			return i18n.Message("Mihomo exited during startup")
 		}
 		select {
 		case <-startup.Done():
 			m.recordLifecycle("Mihomo did not become ready")
-			return errors.New("Mihomo did not become ready")
+			return i18n.Message("Mihomo did not become ready")
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -337,7 +338,7 @@ func (m Manager) stop() error {
 			return err
 		}
 		if count, err := unix.Poll(fds, 2000); err != nil || count == 0 {
-			return errors.New("Mihomo did not exit after stop")
+			return i18n.Message("Mihomo did not exit after stop")
 		}
 	}
 	m.recordLifecycle("Mihomo stopped")

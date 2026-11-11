@@ -3,12 +3,12 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
 var controllerHTTP = &http.Client{
@@ -25,7 +25,7 @@ func (state instance) requestWithin(ctx context.Context, timeout time.Duration, 
 	defer cancel()
 	host, _, err := net.SplitHostPort(state.Controller)
 	if err != nil || host != "127.0.0.1" {
-		return errors.New("invalid controller address")
+		return i18n.Message("invalid controller address")
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+state.Controller+path, body)
 	if err != nil {
@@ -37,11 +37,11 @@ func (state instance) requestWithin(ctx context.Context, timeout time.Duration, 
 	}
 	resp, err := controllerHTTP.Do(req)
 	if err != nil {
-		return errors.New("Mihomo controller unavailable")
+		return i18n.Message("Mihomo controller unavailable")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Mihomo controller returned HTTP %d", resp.StatusCode)
+		return i18n.Errorf("Mihomo controller returned HTTP %d", resp.StatusCode)
 	}
 	if result != nil {
 		return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(result)
@@ -55,20 +55,20 @@ func (m Manager) ready(ctx context.Context, state instance) error {
 		return err
 	}
 	if version.Version != Version {
-		return errors.New("unexpected Mihomo version")
+		return i18n.Message("unexpected Mihomo version")
 	}
 	var rules struct{ Rules []json.RawMessage }
 	if err := state.request(ctx, http.MethodGet, "/rules", nil, &rules); err != nil {
 		return err
 	}
 	if len(rules.Rules) == 0 {
-		return errors.New("Mihomo rules are not ready")
+		return i18n.Message("Mihomo rules are not ready")
 	}
 	if state.Proxy != "" {
 		dialer := net.Dialer{Timeout: time.Second}
 		conn, err := dialer.DialContext(ctx, "tcp", state.Proxy)
 		if err != nil {
-			return errors.New("Mihomo proxy listener is not ready")
+			return i18n.Message("Mihomo proxy listener is not ready")
 		}
 		conn.Close()
 	}

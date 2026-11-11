@@ -1,5 +1,7 @@
 # Termihomo
 
+[English](README.en.md)
+
 Termihomo 是 Mihomo 的终端管理工具。它提供 TUI 和可脚本化 CLI。退出 TUI 后，托管的 Mihomo 继续在后台代理。
 
 首版面向 Linux AMD64 / ARM64，需要 Linux 5.3 或更新版本来安全识别和停止托管进程。使用 Go 1.26 构建。
@@ -11,6 +13,8 @@ go build -o termihomo ./cmd/termihomo
 ./termihomo start
 ./termihomo
 ```
+
+TUI 和 CLI 支持简体中文与英文，默认跟随终端的语言设置。用 `./termihomo --lang zh-CN` 或 `./termihomo --lang en` 指定本次运行的语言，也可设置 `TERMIHOMO_LANG` 作为常用语言。`--lang` 放在子命令前，例如 `./termihomo --lang zh-CN status`。命令名与 `status --json` 的字段及状态值固定。Mihomo 原始日志和订阅中的节点名按原文显示。
 
 TUI 内按 `Tab` 或 `1`–`7` 切换页面，按 `?` 查看快捷键，按 `q` 退出。也可以在 Core 页面安装、启动、停止或重启 Mihomo。Proxy 页支持搜索、排序和测速，Groups 页支持查看组内选项和切换 Selector。Traffic 和 Logs 页显示实时数据。
 

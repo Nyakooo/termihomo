@@ -56,6 +56,7 @@ def smoke(binary, directory, base):
     env = dict(
         os.environ,
         TERM="xterm-256color",
+        TERMIHOMO_LANG="en",
         XDG_CONFIG_HOME=str(directory / "config"),
         XDG_DATA_HOME=str(directory / "data"),
         XDG_STATE_HOME=str(directory / "state"),
@@ -91,6 +92,8 @@ def smoke(binary, directory, base):
         command("start")
         running = status()
         assert running["state"] == "Running", running
+        assert json.loads(command("--lang", "zh-CN", "status", "--json").stdout) == running
+        assert "运行中" in command("--lang", "zh-CN", "status").stdout
         assert running["controller"].startswith("127.0.0.1:")
         try:
             urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
@@ -205,10 +208,10 @@ def terminal_smoke(binary, env, running, status, request, command):
     def resize(cols, rows):
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
-    def launch():
+    def launch(*args):
         seen.clear()
         return subprocess.Popen(
-            [binary], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True,
+            [binary, *args], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True,
         )
 
     def expect(text):
@@ -258,8 +261,15 @@ def terminal_smoke(binary, env, running, status, request, command):
         assert termios.tcgetattr(slave) == original
         assert status()["pid"] == running["pid"]
         request(running)
-        process = launch()
-        expect("Running")
+        process = launch("--lang", "zh-CN")
+        expect("总览")
+        expect("运行中")
+        key(b"4")
+        expect("添加订阅")
+        key(b"a")
+        expect("订阅地址（已隐藏")
+        key(b"\x1b")
+        expect("退出")
         key(b"q")
         assert process.wait(timeout=5) == 0
     finally:

@@ -54,3 +54,46 @@ func TestInitFailureDoesNotLogSecrets(t *testing.T) {
 		t.Fatalf("expected a structured error event, got %s", &logs)
 	}
 }
+
+func TestLanguageSelectionAndStatusJSON(t *testing.T) {
+	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		t.Setenv(key, t.TempDir())
+	}
+	t.Setenv("TERMIHOMO_LANG", "")
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LANG", "zh_CN.UTF-8")
+
+	run := func(wantCode int, args ...string) string {
+		t.Helper()
+		var out, diagnostics bytes.Buffer
+		if code := Run(args, &out, &diagnostics); code != wantCode {
+			t.Fatalf("%v exited %d: %s", args, code, &diagnostics)
+		}
+		if wantCode != 0 {
+			return diagnostics.String()
+		}
+		return out.String()
+	}
+	if got := run(0, "--help"); !strings.Contains(got, "用法") {
+		t.Fatalf("locale did not select Chinese help: %q", got)
+	}
+	t.Setenv("TERMIHOMO_LANG", "en")
+	if got := run(0, "--help"); !strings.Contains(got, "Usage:") {
+		t.Fatalf("environment did not override locale: %q", got)
+	}
+	if got := run(0, "--lang", "zh-CN", "status"); strings.TrimSpace(got) != "未安装" {
+		t.Fatalf("flag did not override environment: %q", got)
+	}
+	if got := run(1, "--lang", "zh-CN", "start"); !strings.Contains(got, "安装 Mihomo") {
+		t.Fatalf("core error was not translated: %q", got)
+	}
+	if got := run(2, "--lang", "unsupported"); !strings.Contains(got, "--lang en") {
+		t.Fatalf("missing language guidance: %q", got)
+	}
+	english := run(0, "--lang", "en", "status", "--json")
+	chinese := run(0, "--lang", "zh-CN", "status", "--json")
+	if english != chinese || !strings.Contains(chinese, `"state":"NotInstalled"`) {
+		t.Fatalf("localized status JSON changed its contract: en=%q zh=%q", english, chinese)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -29,10 +30,10 @@ func loadSettings(dir string) (settings, error) {
 		return config, err
 	}
 	if err := yaml.Unmarshal(body, &config); err != nil {
-		return config, errors.New("invalid Termihomo settings YAML")
+		return config, i18n.Message("invalid Termihomo settings YAML")
 	}
 	if config.RefreshSeconds < 1 || config.RefreshSeconds > 300 {
-		return config, errors.New("refresh-seconds must be between 1 and 300")
+		return config, i18n.Message("refresh-seconds must be between 1 and 300")
 	}
 	used := map[string]bool{
 		"tab": true, "shift+tab": true, "left": true, "right": true,
@@ -42,13 +43,13 @@ func loadSettings(dir string) (settings, error) {
 	}
 	for action := range config.Keys {
 		if _, ok := defaultKeys[action]; !ok {
-			return config, errors.New("settings contain an unknown shortcut action")
+			return config, i18n.Message("settings contain an unknown shortcut action")
 		}
 	}
 	for action := range defaultKeys {
 		key := config.key(action)
 		if used[key] {
-			return config, errors.New("settings contain a duplicate or reserved shortcut")
+			return config, i18n.Message("settings contain a duplicate or reserved shortcut")
 		}
 		used[key] = true
 	}

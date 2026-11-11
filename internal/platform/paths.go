@@ -1,10 +1,11 @@
 package platform
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
 type Paths struct {
@@ -15,11 +16,11 @@ type Paths struct {
 
 func ResolvePaths() (Paths, error) {
 	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
-		return Paths{}, errors.New("supported platforms: Linux AMD64 and ARM64")
+		return Paths{}, i18n.Message("supported platforms: Linux AMD64 and ARM64")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil || !filepath.IsAbs(home) {
-		return Paths{}, errors.New("HOME must be an absolute path")
+		return Paths{}, i18n.Message("HOME must be an absolute path")
 	}
 	base := func(key, fallback string) string {
 		if path := os.Getenv(key); filepath.IsAbs(path) {
@@ -44,7 +45,7 @@ func (p Paths) Ensure() error {
 			return err
 		}
 		if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
-			return errors.New("application directories must be private directories")
+			return i18n.Message("application directories must be private directories")
 		}
 	}
 	return nil

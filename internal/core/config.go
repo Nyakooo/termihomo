@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -19,11 +20,11 @@ func renderConfig(source []byte, state instance) ([]byte, error) {
 	if len(source) > 0 {
 		decoder := yaml.NewDecoder(bytes.NewReader(source))
 		if err := decoder.Decode(&config); err != nil || config == nil || len(config) == 0 {
-			return nil, errors.New("profile must contain a Mihomo YAML mapping")
+			return nil, i18n.Message("profile must contain a Mihomo YAML mapping")
 		}
 		var extra any
 		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-			return nil, errors.New("profile must contain a single YAML document")
+			return nil, i18n.Message("profile must contain a single YAML document")
 		}
 	}
 	for _, key := range []string{
@@ -39,11 +40,11 @@ func renderConfig(source []byte, state instance) ([]byte, error) {
 	}
 	_, port, err := net.SplitHostPort(state.Proxy)
 	if err != nil {
-		return nil, errors.New("invalid managed proxy address")
+		return nil, i18n.Message("invalid managed proxy address")
 	}
 	mixed, err := strconv.Atoi(port)
 	if err != nil {
-		return nil, errors.New("invalid managed proxy port")
+		return nil, i18n.Message("invalid managed proxy port")
 	}
 	config["mixed-port"] = mixed
 	config["allow-lan"] = false
@@ -55,14 +56,14 @@ func renderConfig(source []byte, state instance) ([]byte, error) {
 	}
 	rules, ok := config["rules"].([]any)
 	if config["rules"] != nil && !ok {
-		return nil, errors.New("profile rules must be a YAML sequence")
+		return nil, i18n.Message("profile rules must be a YAML sequence")
 	}
 	if len(rules) == 0 {
 		config["rules"] = []string{"MATCH,DIRECT"}
 	}
 	body, err := yaml.Marshal(config)
 	if err != nil {
-		return nil, errors.New("cannot generate managed Mihomo configuration")
+		return nil, i18n.Message("cannot generate managed Mihomo configuration")
 	}
 	return body, nil
 }
@@ -103,7 +104,7 @@ func (m Manager) validateConfig(ctx context.Context, body []byte) error {
 	cmd := exec.CommandContext(check, m.binary(), "-d", m.runDir(), "-t", "-f", file.Name())
 	cmd.Env = mihomoEnv()
 	if err := cmd.Run(); err != nil {
-		return errors.New("Mihomo configuration validation failed")
+		return i18n.Message("Mihomo configuration validation failed")
 	}
 	return nil
 }
@@ -129,7 +130,7 @@ func (m Manager) BackupConfig() (string, error) {
 	err := m.withLock(func() error {
 		body, err := os.ReadFile(m.configPath())
 		if err != nil {
-			return errors.New("no generated configuration is available to back up")
+			return i18n.Message("no generated configuration is available to back up")
 		}
 		return atomicWrite(backup, body)
 	})
