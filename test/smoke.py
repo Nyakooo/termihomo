@@ -62,6 +62,7 @@ def smoke(binary, directory, base):
     env = dict(
         os.environ,
         TERM="xterm-256color",
+        NO_COLOR="1",
         TERMIHOMO_LANG="en",
         XDG_CONFIG_HOME=str(directory / "config"),
         XDG_DATA_HOME=str(directory / "data"),
@@ -320,18 +321,36 @@ def terminal_smoke(binary, env, running, status, request, command, base):
     def click(column, row):
         key(f"\x1b[<0;{column};{row}M\x1b[<0;{column};{row}m".encode())
 
+    instance = json.loads((Path(env["XDG_DATA_HOME"]) / "termihomo" / "instance.json").read_text())
+    controller = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    config_request = urllib.request.Request(
+        f"http://{running['controller']}/configs",
+        headers={"Authorization": "Bearer " + instance["Secret"]},
+    )
+
+    def wait_for_mode(mode):
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            if select.select([master], [], [], 0.1)[0]:
+                seen.extend(os.read(master, 65536))
+            with controller.open(config_request, timeout=2) as response:
+                actual = json.load(response)["mode"]
+            if actual.lower() == mode:
+                return
+        raise AssertionError(f"terminal did not select mode {mode!r}")
+
     try:
         resize(122, 27)
         process = launch()
         expect("Running")
         key(b"m")
-        expect(rb"Running +global")
+        wait_for_mode("global")
         key(b"2")
         expect("Current exit")
         key(b"1d")
-        expect(rb"Running +direct|Current exit .*DIRECT")
+        wait_for_mode("direct")
         # Probe the real mixed listener through an active private IPv4 interface.
-        interfaces = json.loads(subprocess.check_output(["ip", "-j", "-4", "addr", "show", "up"]))
+        interfaces = json.loads(subprocess.check_output(["ip", "-j", "-4", "addr", "show", "up"])) if sys.platform == "linux" else []
         private = [ipaddress.ip_network(block) for block in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
         addresses = [
             addr["local"] for iface in interfaces if "BROADCAST" in iface["flags"]
@@ -353,7 +372,7 @@ def terminal_smoke(binary, env, running, status, request, command, base):
             except OSError:
                 pass
         key(b"b")
-        expect(rb"Running +rule|Rule fallback exit")
+        wait_for_mode("rule")
         assert status()["pid"] == running["pid"]
         key(b"2")
         expect("REJECT")

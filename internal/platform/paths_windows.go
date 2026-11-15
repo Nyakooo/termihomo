@@ -11,6 +11,7 @@ import (
 )
 
 func ensurePrivateDirectory(path string) error {
+	path = filepath.Clean(path)
 	current, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return err
@@ -24,9 +25,9 @@ func ensurePrivateDirectory(path string) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
-		sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;" + current.User.Sid.String() + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
-		if err != nil {
-			return err
+		sd, descriptorErr := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;" + current.User.Sid.String() + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+		if descriptorErr != nil {
+			return descriptorErr
 		}
 		sa := windows.SecurityAttributes{SecurityDescriptor: sd}
 		sa.Length = uint32(unsafe.Sizeof(sa))

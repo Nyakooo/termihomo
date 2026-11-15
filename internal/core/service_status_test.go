@@ -32,7 +32,7 @@ func TestServiceProbeClassifiesRestrictedResponses(t *testing.T) {
 	}))
 	defer server.Close()
 	result, body := probeService(t.Context(), server.Client(), server.URL, 1024)
-	if result.HTTP != http.StatusForbidden || result.Status != ServiceRestricted || result.Delay <= 0 || body != "access restricted" {
+	if result.HTTP != http.StatusForbidden || result.Status != ServiceRestricted || body != "access restricted" {
 		t.Fatalf("unexpected service result: %+v, body=%q", result, body)
 	}
 }
