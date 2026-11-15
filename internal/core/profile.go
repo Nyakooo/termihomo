@@ -1,31 +1,72 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Nyakooo/termihomo/internal/i18n"
-	"golang.org/x/sys/unix"
 )
 
+type SubscriptionQuota struct {
+	Upload   int64 `json:"upload"`
+	Download int64 `json:"download"`
+	Total    int64 `json:"total"`
+	Expire   int64 `json:"expire"`
+}
+
+const DefaultProfileInterval = 1440
+
+type ProfileSchedule struct {
+	Disabled bool `json:"disabled,omitempty"`
+	Minutes  int  `json:"minutes,omitempty"`
+}
+
+func (s ProfileSchedule) Interval() int {
+	if s.Minutes == 0 {
+		return DefaultProfileInterval
+	}
+	return s.Minutes
+}
+
+func (p ProfileInfo) UpdateDue(now time.Time) bool {
+	return p.Source == "subscription" && !p.Schedule.Disabled &&
+		!now.Before(p.Updated.Add(time.Duration(p.Schedule.Interval())*time.Minute))
+}
+
 type ProfileInfo struct {
-	Source  string    `json:"source"`
-	Updated time.Time `json:"updated"`
+	Added      time.Time          `json:"added,omitzero"`
+	Schedule   ProfileSchedule    `json:"schedule,omitzero"`
+	ID         string             `json:"id,omitempty"`
+	Active     bool               `json:"-"`
+	CustomName string             `json:"custom_name,omitempty"`
+	Name       string             `json:"name,omitempty"`
+	Quota      *SubscriptionQuota `json:"quota,omitempty"`
+	Source     string             `json:"source"`
+	Updated    time.Time          `json:"updated"`
+	URL        string             `json:"-"`
+	Nodes      int                `json:"-"`
 }
 
 type profile struct {
 	ProfileInfo
-	URL  string `json:"url,omitempty"`
-	YAML []byte `json:"yaml"`
+	Nodes int    `json:"nodes,omitempty"`
+	URL   string `json:"url,omitempty"`
+	YAML  []byte `json:"yaml"`
 }
 
 const profileLimit = 8 << 20
@@ -33,11 +74,25 @@ const profileLimit = 8 << 20
 func (m Manager) profilePath() string { return filepath.Join(m.Paths.Config, "profile.json") }
 
 func (m Manager) readProfile() (profile, error) {
-	var current profile
-	body, err := os.ReadFile(m.profilePath())
+	current, err := readProfileAt(m.profilePath())
 	if errors.Is(err, os.ErrNotExist) {
-		return current, nil
+		return profile{}, nil
 	}
+	return current, err
+}
+
+func readProfileAt(path string) (profile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return profile{}, err
+	}
+	defer file.Close()
+	return decodeSavedProfile(file)
+}
+
+func decodeSavedProfile(file io.Reader) (profile, error) {
+	var current profile
+	body, err := io.ReadAll(file)
 	if err != nil {
 		return current, err
 	}
@@ -47,32 +102,195 @@ func (m Manager) readProfile() (profile, error) {
 	return current, nil
 }
 
+// ProfileEditLink returns the original URL for the interactive editor only.
+func (m Manager) ProfileEditLink(id string) (string, error) {
+	current, _, err := m.findProfile(id)
+	return current.URL, err
+}
+
 func (m Manager) Profile() (ProfileInfo, error) {
 	current, err := m.readProfile()
-	return current.ProfileInfo, err
+	return current.summary(), err
+}
+
+func (current profile) summary() ProfileInfo {
+	info := current.ProfileInfo
+	info.URL = maskedURL(current.URL)
+	info.Nodes = current.Nodes
+	if info.Nodes == 0 && len(current.YAML) > 0 {
+		info.Nodes = countProfileNodes(current.YAML)
+	}
+	return info
+}
+
+// countProfileNodes counts top-level entries of the proxies list without
+// parsing the whole document; profiles are re-read on every refresh.
+func countProfileNodes(body []byte) int {
+	count := 0
+	inProxies := false
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 64*1024), len(body)+1)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !inProxies {
+			if strings.HasPrefix(line, "proxies:") {
+				inProxies = true
+			}
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "-") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "- ") || trimmed == "-" {
+			count++
+		}
+	}
+	return count
+}
+
+// maskedURL keeps a subscription recognizable without exposing credentials that
+// commonly live in the query string or userinfo.
+func maskedURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(parsed.Scheme)
+	b.WriteString("://")
+	if parsed.User != nil {
+		b.WriteString("***@")
+	}
+	b.WriteString(parsed.Host)
+	// Subscription tokens commonly live in the path, so only its shape is
+	// shown; keeping the full path would leak the credential.
+	if path := parsed.EscapedPath(); path != "" && path != "/" {
+		b.WriteString("/…")
+	} else {
+		b.WriteString(path)
+	}
+	if parsed.RawQuery != "" {
+		parts := strings.Split(parsed.RawQuery, "&")
+		for i, part := range parts {
+			if key, _, found := strings.Cut(part, "="); found {
+				parts[i] = key + "=…"
+			} else {
+				parts[i] = part + "=…"
+			}
+		}
+		b.WriteString("?")
+		b.WriteString(strings.Join(parts, "&"))
+	}
+	return b.String()
+}
+
+// normalizeSubscription accepts the two shapes subscription servers commonly
+// return: plain Clash YAML and the same YAML wrapped in base64.
+func normalizeSubscription(body []byte) []byte {
+	body = bytes.TrimPrefix(body, []byte{0xEF, 0xBB, 0xBF})
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return body
+	}
+	if bytes.ContainsAny(trimmed, ":{}#") {
+		return body
+	}
+	compact := strings.Join(strings.Fields(string(trimmed)), "")
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(compact)
+		if err != nil {
+			continue
+		}
+		decoded = bytes.TrimPrefix(decoded, []byte{0xEF, 0xBB, 0xBF})
+		if utf8.Valid(decoded) && bytes.ContainsAny(decoded, ":{}\n") {
+			return decoded
+		}
+	}
+	return body
 }
 
 func (m Manager) ImportProfile(ctx context.Context, path string) error {
-	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK, 0)
+	next, err := loadProfileFile(path, "")
 	if err != nil {
-		return i18n.Message("cannot open the profile file")
+		return err
+	}
+	return m.withLock(func() error { return m.applyProfile(ctx, next) })
+}
+
+func loadProfileFile(path, name string) (profile, error) {
+	file, err := openProfile(path)
+	if err != nil {
+		return profile{}, i18n.Message("cannot open the profile file")
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return i18n.Message("profile path must be a regular file")
+		return profile{}, i18n.Message("profile path must be a regular file")
 	}
 	body, err := readProfileBody(file)
 	if err != nil {
-		return err
+		return profile{}, err
 	}
-	return m.withLock(func() error {
-		return m.applyProfile(ctx, profile{ProfileInfo: ProfileInfo{Source: "file"}, YAML: body})
-	})
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	return profile{ProfileInfo: ProfileInfo{Source: "file", Name: name}, YAML: body}, nil
 }
 
 func (m Manager) AddSubscription(ctx context.Context, source string) error {
-	return m.withLock(func() error { return m.fetchSubscription(ctx, source) })
+	return m.AddNamedSubscription(ctx, source, "")
+}
+
+func (m Manager) AddNamedSubscription(ctx context.Context, source, name string) error {
+	return m.withLock(func() error { return m.fetchSubscription(ctx, source, "", strings.TrimSpace(name)) })
+}
+
+// EditProfile updates metadata directly and validates a changed subscription before replacing it.
+func (m Manager) EditProfile(ctx context.Context, id, name, source string, schedule ProfileSchedule) error {
+	return m.withLock(func() error {
+		current, active, err := m.findProfile(id)
+		if err != nil {
+			return err
+		}
+		if current.Source == "" {
+			return i18n.Message("No active profile")
+		}
+		if schedule.Minutes < 0 || schedule.Minutes > 525600 {
+			return i18n.Message("Update interval must be between 1 and 525600 minutes")
+		}
+		if source != "" && source != current.URL {
+			next, err := downloadSubscription(ctx, source, "", name)
+			if err != nil {
+				return err
+			}
+			next.ID, next.Schedule, next.Added = current.ID, schedule, current.addedAt()
+			if !active {
+				return m.validateAndSaveProfile(ctx, next)
+			}
+			return m.applyProfile(ctx, next)
+		}
+		if name != "" && name != current.Name {
+			current.Name, current.CustomName = name, name
+		}
+		current.Schedule = schedule
+		if !active {
+			return m.saveLibraryProfile(current)
+		}
+		body, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		return atomicWrite(m.profilePath(), body)
+	})
 }
 
 func (m Manager) UpdateProfile(ctx context.Context) error {
@@ -84,7 +302,7 @@ func (m Manager) UpdateProfile(ctx context.Context) error {
 		if current.URL == "" {
 			return i18n.Message("no subscription is configured")
 		}
-		return m.fetchSubscription(ctx, current.URL)
+		return m.fetchSubscription(ctx, current.URL, current.Name, current.CustomName)
 	})
 }
 
@@ -99,10 +317,23 @@ func readProfileBody(reader io.Reader) ([]byte, error) {
 	return body, nil
 }
 
-func (m Manager) fetchSubscription(ctx context.Context, source string) error {
+func (m Manager) fetchSubscription(ctx context.Context, source, previousName, customName string) error {
+	next, err := downloadSubscription(ctx, source, previousName, customName)
+	if err != nil {
+		return err
+	}
+	current, err := m.readProfile()
+	if err != nil {
+		return err
+	}
+	next.ID, next.Schedule, next.Added = current.ID, current.Schedule, current.addedAt()
+	return m.applyProfile(ctx, next)
+}
+
+func downloadSubscription(ctx context.Context, source, previousName, customName string) (profile, error) {
 	parsed, err := url.Parse(source)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
-		return i18n.Message("subscription requires a valid HTTP or HTTPS URL")
+		return profile{}, i18n.Message("subscription requires a valid HTTP or HTTPS URL")
 	}
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -114,24 +345,121 @@ func (m Manager) fetchSubscription(ctx context.Context, source string) error {
 			return nil
 		},
 	}
+	body, headers, err := requestSubscription(ctx, client, source, "mihomo/"+Version+" Termihomo")
+	if err != nil {
+		return profile{}, err
+	}
+	if isProxyLinkList(body) {
+		// Some providers only return a complete Mihomo profile to known clients.
+		body, headers, err = requestSubscription(ctx, client, source, "FlClash/0.9.3")
+		if err != nil {
+			return profile{}, err
+		}
+		if isProxyLinkList(body) {
+			return profile{}, i18n.Message("Subscription returned node links instead of a Mihomo YAML profile")
+		}
+	}
+	name := customName
+	if name == "" {
+		name = subscriptionName(headers, previousName, parsed.Hostname())
+	}
+	return profile{ProfileInfo: ProfileInfo{Source: "subscription", Name: name, CustomName: customName,
+		Quota: parseSubscriptionQuota(headers.Get("Subscription-Userinfo"))}, URL: source, YAML: body}, nil
+}
+
+func requestSubscription(ctx context.Context, client *http.Client, source, userAgent string) ([]byte, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
-		return i18n.Message("invalid subscription request")
+		return nil, nil, i18n.Message("invalid subscription request")
 	}
-	req.Header.Set("User-Agent", "mihomo/"+Version+" Termihomo")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
-		return i18n.Message("subscription download failed")
+		return nil, nil, i18n.Message("subscription download failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return i18n.Errorf("subscription server returned HTTP %d", resp.StatusCode)
+		return nil, nil, i18n.Errorf("subscription server returned HTTP %d", resp.StatusCode)
 	}
 	body, err := readProfileBody(resp.Body)
-	if err != nil {
-		return err
+	return normalizeSubscription(body), resp.Header, err
+}
+
+func isProxyLinkList(body []byte) bool {
+	found := false
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		scheme, _, ok := bytes.Cut(line, []byte("://"))
+		if !ok {
+			return false
+		}
+		switch strings.ToLower(string(scheme)) {
+		case "ss", "ssr", "vmess", "vless", "trojan", "hysteria", "hysteria2", "hy2", "tuic", "socks", "socks5", "wireguard", "anytls":
+			found = true
+		default:
+			return false
+		}
 	}
-	return m.applyProfile(ctx, profile{ProfileInfo: ProfileInfo{Source: "subscription"}, URL: source, YAML: body})
+	return found
+}
+
+func subscriptionName(headers http.Header, previous, hostname string) string {
+	title := strings.TrimSpace(headers.Get("Profile-Title"))
+	if encoded, ok := strings.CutPrefix(title, "base64:"); ok {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			decoded, _ = base64.RawStdEncoding.DecodeString(encoded)
+		}
+		title = strings.TrimSpace(string(decoded))
+	}
+	if title != "" && utf8.ValidString(title) {
+		return title
+	}
+	if _, params, err := mime.ParseMediaType(headers.Get("Content-Disposition")); err == nil {
+		name := filepath.Base(strings.ReplaceAll(strings.TrimSpace(params["filename"]), "\\", "/"))
+		if name != "." && name != "/" {
+			return name
+		}
+	}
+	if previous != "" {
+		return previous
+	}
+	return hostname
+}
+
+func parseSubscriptionQuota(header string) *SubscriptionQuota {
+	var quota SubscriptionQuota
+	found := false
+	for _, field := range strings.Split(header, ";") {
+		key, raw, ok := strings.Cut(field, "=")
+		if !ok {
+			continue
+		}
+		value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || value < 0 {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "upload":
+			quota.Upload = value
+		case "download":
+			quota.Download = value
+		case "total":
+			quota.Total = value
+		case "expire":
+			quota.Expire = value
+		default:
+			continue
+		}
+		found = true
+	}
+	if !found {
+		return nil
+	}
+	return &quota
 }
 
 func (m Manager) applyProfile(ctx context.Context, next profile) error {
@@ -147,27 +475,34 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	case err != nil:
 		return err
 	default:
-		fd, err := state.openProcess()
+		process, err := state.openProcess()
 		if errors.Is(err, os.ErrProcessDone) {
 			state = instance{}
 		} else if err != nil {
 			return err
 		} else {
-			defer unix.Close(fd)
+			defer process.close()
 		}
 	}
 	renderState := state
 	if state.PID == 0 {
 		renderState = instance{Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only"}
 	}
-	candidate, err := renderConfig(next.YAML, renderState)
+	candidate, err := m.renderConfig(next.YAML, renderState)
 	if err != nil {
 		return err
 	}
 	if err := m.validateConfig(ctx, candidate); err != nil {
 		return err
 	}
+	if next.Added.IsZero() {
+		next.Added = next.addedAt()
+	}
 	next.Updated = time.Now()
+	if next.Added.IsZero() {
+		next.Added = next.Updated
+	}
+	next.Nodes = countProfileNodes(next.YAML)
 	record, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -280,19 +615,15 @@ func (m Manager) restoreConfig(state instance, pending profileChange) error {
 	if err := m.stop(); err != nil {
 		return i18n.Wrap("profile update failed and Mihomo could not be stopped for recovery: %s", err)
 	}
-	if err := m.startOn(ctx, state.Proxy); err != nil {
+	if err := m.startOnMode(ctx, state.Proxy, state.Paused); err != nil {
 		return i18n.Wrap("profile update failed and the previous profile could not be restarted: %s", err)
 	}
 	restored, err := m.runningInstance()
 	if err != nil {
 		return i18n.Wrap("profile update failed and the restored process is unavailable: %s", err)
 	}
-	for _, choice := range pending.Choices {
-		if choice.Type == "Selector" && choice.Now != "" {
-			if err := restored.selectProxy(ctx, choice.Name, choice.Now); err != nil {
-				return i18n.Wrap("previous profile is running, but a selector choice could not be restored: %s", err)
-			}
-		}
+	if err := restored.restoreSelectors(ctx, pending.Choices); err != nil {
+		return i18n.Wrap("previous profile is running, but a selector choice could not be restored: %s", err)
 	}
 	if err := m.ready(ctx, restored); err != nil {
 		return i18n.Wrap("profile update failed and recovery could not be verified: %s", err)

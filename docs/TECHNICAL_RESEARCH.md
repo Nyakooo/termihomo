@@ -1,6 +1,6 @@
-# Termihomo Gate 0 技术调研
+# Mihomo v1.19.34 集成验证记录
 
-核查日期：2026-11-11（Asia/Shanghai）。**Gate 0 通过，可进入 Phase 1。** 已下载校验 Linux 双架构发布物，并在 AMD64 上用官方内核实测配置校验、认证、节点切换、真实代理请求、流量与日志。ARM64 原生运行、终端兼容性和 Termihomo 自身的恢复流程留给对应实施阶段验收。
+2026-11-11 在 Linux AMD64 上使用官方 Mihomo v1.19.34 完成以下实测。当前 Termihomo 实现见 [技术架构](ARCHITECTURE.md)。
 
 ## 发行资产与完整性
 
@@ -39,22 +39,6 @@
 - **保持 Controller 配置归 Termihomo。** 首版只启用回环 HTTP + WebSocket，均用 Bearer；Secret 放在权限受限的运行配置，避免出现在命令行、URL 或日志。组选择按受支持类型暴露，服务端仍可能拒绝候选项。WebSocket 断开后由客户端退避重连，期间标注数据已过期；目前实测连接恢复，未确认日志重放。[Controller 配置文档](https://wiki.metacubex.one/en/config/general/) 和 [固定版本源码](https://github.com/MetaCubeX/mihomo/blob/v1.19.34/hub/route/server.go) 均说明 Unix Socket、Windows Named Pipe 的原生入口；源码中两者均未启用 Bearer，且 Unix Socket 设为 0666。Windows Pipe 未实测，首版两者均不启用。
 - **受管配置和订阅原文分离。** 生成受管运行文件时明确覆盖 Controller、安全相关监听与 Secret，避免导入文件重新打开额外 Controller。用相同内核、工作目录和权限校验候选配置。优先以 `PUT /configs` 和 `{}` 重载固定受管路径；显式 `path` 受绝对路径和安全目录限制。204 表示重载处理结束，不能单独证明代理请求已恢复；失败恢复要验证旧文件和运行状态，并明确报告恢复失败。[配置处理](https://github.com/MetaCubeX/mihomo/blob/v1.19.34/hub/route/configs.go)；[应用配置流程](https://github.com/MetaCubeX/mihomo/blob/v1.19.34/hub/executor/executor.go)。
 
-## 工具链与候选依赖
+## 内核许可证
 
-以 Go 1.26 为基线，CI 用该分支最新修补版本；[Go 官方发布记录](https://go.dev/doc/devel/release#go1.26) 在调研日列出 1.26.11，本机已下载并验证 `GOTOOLCHAIN=go1.26.11 go version`。Phase 1 优先使用标准库，未使用的候选库不加入模块。
-
-| 用途 | 调研时稳定候选 | go.mod 最低版本 | 上游许可 |
-|---|---|---|---|
-| TUI | [Bubble Tea v2.1.1](https://github.com/charmbracelet/bubbletea/tree/v2.1.1) | 1.26.0 | MIT |
-| 样式 | [Lip Gloss v2.1.0](https://github.com/charmbracelet/lipgloss/tree/v2.1.0) | 1.26.7 | MIT |
-| CLI | [Cobra v1.10.2](https://github.com/spf13/cobra/tree/v1.10.2) | 1.15 | Apache-2.0 |
-| WebSocket | [Coder WebSocket v1.8.15](https://github.com/coder/websocket/tree/v1.8.15) | 1.23 | ISC |
-| YAML | [Go YAML v3.0.6](https://github.com/yaml/go-yaml/tree/v3.0.6) | 1.16 | 按文件区分 MIT、Apache-2.0 |
-
-版本及最低 Go 版本来自 Go 模块元数据，许可由下载模块的 LICENSE / NOTICE 复核。Phase 4 加入 UI 依赖时，实测常见终端、SSH/PTY、窄屏、调整窗口大小与退出后恢复终端状态。构建矩阵使用 [GitHub 托管运行器](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) 的 `ubuntu-24.04`（AMD64）和 `ubuntu-24.04-arm`（ARM64），分别原生运行 build/test/vet；可用的官方 action 版本为 [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1) 和 [setup-go v7.0.0](https://github.com/actions/setup-go/releases/tag/v7.0.0)。本地交叉编译不替代 ARM64 原生运行验证。
-
-## 许可与未决验收
-
-- **核对具体 tag。** [v1.19.34 的 LICENSE](https://github.com/MetaCubeX/mihomo/blob/v1.19.34/LICENSE) 和 [该 tag 的 README](https://github.com/MetaCubeX/mihomo/blob/v1.19.34/README.md) 标明 GPL-3.0；[默认分支 LICENSE](https://github.com/MetaCubeX/mihomo/blob/main/LICENSE) 在核查时不同，不能用来判断该发布物的条款。V0.1 推荐从官方 Release 下载独立进程，Termihomo 发布包不捆绑、不链接内核。如将来通过镜像、安装包或镜像站分发内核二进制，发布前应按目标 tag 检查许可声明和对应源码提供方式，见 [GPL v3 第 4–6 节](https://www.gnu.org/licenses/gpl-3.0.html)。
-- Termihomo 自身许可证和实际引入的传递依赖清单在发布前确定。当前候选库尚未成为发布依赖。
-- Phase 2/3 还需验证 ARM64 原生运行、非 root 管理和 PID 身份校验、端口冲突、后台跨会话、订阅更新失败后的回滚、断线期间的过期提示。macOS、Windows、Termux、Docker、TUN 留到各平台验收。此调研未将这些项目视为已经通过。
+本次核查的 [v1.19.34 标签](https://github.com/MetaCubeX/mihomo/tree/v1.19.34) 使用 GPL-3.0。Termihomo 下载官方发布的内核并作为独立进程运行。

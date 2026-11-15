@@ -24,6 +24,8 @@ type Traffic struct {
 }
 
 type LogEntry struct {
+	Time          time.Time `json:"-"`
+	DNS           *DNSEvent `json:"-"`
 	Type, Payload string
 }
 
@@ -39,6 +41,11 @@ func (m Manager) StreamLogs(ctx context.Context, level string, receive func(LogE
 	}
 	clean := m.logRedactor()
 	return stream(ctx, m, "/logs?level="+level, func(entry LogEntry) {
+		entry.Time = time.Now()
+		if entry.DNS = parseDNSEvent(entry.Payload); entry.DNS != nil {
+			entry.DNS.Domain = clean(entry.DNS.Domain)
+			entry.DNS.Result = clean(entry.DNS.Result)
+		}
 		entry.Type, entry.Payload = clean(entry.Type), clean(entry.Payload)
 		receive(entry)
 	})

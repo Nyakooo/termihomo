@@ -1,6 +1,7 @@
 package core
 
 import (
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Nyakooo/termihomo/internal/i18n"
@@ -22,11 +24,26 @@ import (
 const Version = "v1.19.34"
 
 type Manager struct {
-	Paths platform.Paths
+	Paths            platform.Paths
+	proxyOrder       *proxyOrderCache
+	profileSummaries *profileSummaryCache
 }
 
 func (m Manager) binary() string {
-	return filepath.Join(m.Paths.Data, "cores", Version, "mihomo")
+	name := "mihomo"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(m.Paths.Data, "cores", Version, name)
+}
+
+// BinaryPath returns the managed Mihomo binary location for display purposes.
+func (m Manager) BinaryPath() string { return m.binary() }
+
+// KernelPresent reports whether the managed Mihomo binary is already installed.
+func (m Manager) KernelPresent() bool {
+	_, err := os.Stat(m.binary())
+	return err == nil
 }
 
 func (m Manager) Install(ctx context.Context) error {
@@ -44,18 +61,11 @@ func (m Manager) Install(ctx context.Context) error {
 		return err
 	}
 
-	var arch, digest string
-	switch runtime.GOARCH {
-	case "amd64":
-		arch = "amd64-v1"
-		digest = "0c07340a01408d033dda4088ea2a4c1e4d82aeed7b2f84f7c046e93b6ff3290c"
-	case "arm64":
-		arch = "arm64"
-		digest = "daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
-	default:
+	asset, digest := kernelAsset(runtime.GOOS, runtime.GOARCH)
+	if asset == "" {
 		return i18n.Message("no Mihomo release for this architecture")
 	}
-	asset := fmt.Sprintf("https://github.com/MetaCubeX/mihomo/releases/download/%s/mihomo-linux-%s-%s.gz", Version, arch, Version)
+	asset = fmt.Sprintf("https://github.com/MetaCubeX/mihomo/releases/download/%s/%s", Version, asset)
 	client := &http.Client{Timeout: 2 * time.Minute}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset, nil)
 	if err != nil {
@@ -74,7 +84,7 @@ func (m Manager) Install(ctx context.Context) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	archive, err := os.CreateTemp(dir, ".mihomo-*.gz")
+	archive, err := os.CreateTemp(dir, ".mihomo-archive-*")
 	if err != nil {
 		return err
 	}
@@ -89,10 +99,7 @@ func (m Manager) Install(ctx context.Context) error {
 	if size > archiveLimit || hex.EncodeToString(hash.Sum(nil)) != digest {
 		return i18n.Message("Mihomo archive size or SHA-256 verification failed")
 	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	payload, err := gzip.NewReader(archive)
+	payload, err := kernelPayload(archive, size, filepath.Ext(asset) == ".zip")
 	if err != nil {
 		return err
 	}
@@ -118,4 +125,50 @@ func (m Manager) Install(ctx context.Context) error {
 		return err
 	}
 	return os.Rename(bin.Name(), m.binary())
+}
+
+func kernelAsset(goos, goarch string) (string, string) {
+	arch, extension := goarch, "gz"
+	if goarch == "amd64" {
+		arch = "amd64-v1"
+	}
+	var digest string
+	switch goos + "/" + goarch {
+	case "linux/amd64":
+		digest = "0c07340a01408d033dda4088ea2a4c1e4d82aeed7b2f84f7c046e93b6ff3290c"
+	case "linux/arm64":
+		digest = "daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
+	case "android/arm64":
+		arch, digest = "arm64-v8", "48a71fc6a68e2909587176e0ab7185d8f2fac298fa96ccdacf30ea86ab2359b5"
+	case "darwin/amd64":
+		digest = "84af3a9ffd4699e02f14b89859c58b4fc380f6a2135037c6e88e6822347ae657"
+	case "darwin/arm64":
+		digest = "1a7a20eca63fbbaec90137717465bfde488d0db2a3a79b8fadebf9b2545b6e4c"
+	case "windows/amd64":
+		extension, digest = "zip", "703e325bfeee582f874b06d054eaae55ab7c194645d1835411685aafa85da5ea"
+	case "windows/arm64":
+		extension, digest = "zip", "076cb04a21377675bcf009b8d1dd83006ce2464aa537e37bce1faf6d3504f554"
+	default:
+		return "", ""
+	}
+	return fmt.Sprintf("mihomo-%s-%s-%s.%s", goos, arch, Version, extension), digest
+}
+
+func kernelPayload(archive *os.File, size int64, zipped bool) (io.ReadCloser, error) {
+	if !zipped {
+		if _, err := archive.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		return gzip.NewReader(archive)
+	}
+	files, err := zip.NewReader(archive, size)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files.File {
+		if file.Mode().IsRegular() && strings.EqualFold(filepath.Ext(file.Name), ".exe") {
+			return file.Open()
+		}
+	}
+	return nil, i18n.Message("Mihomo archive has no Windows executable")
 }

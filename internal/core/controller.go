@@ -20,6 +20,16 @@ func (state instance) request(ctx context.Context, method, path string, body io.
 	return state.requestWithin(ctx, 2*time.Second, method, path, body, result)
 }
 
+type controllerStatus int
+
+func (status controllerStatus) Error() string {
+	return i18n.Errorf("Mihomo controller returned HTTP %d", int(status)).Error()
+}
+
+func (status controllerStatus) Unwrap() error {
+	return i18n.Errorf("Mihomo controller returned HTTP %d", int(status))
+}
+
 func (state instance) requestWithin(ctx context.Context, timeout time.Duration, method, path string, body io.Reader, result any) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -41,7 +51,7 @@ func (state instance) requestWithin(ctx context.Context, timeout time.Duration, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return i18n.Errorf("Mihomo controller returned HTTP %d", resp.StatusCode)
+		return controllerStatus(resp.StatusCode)
 	}
 	if result != nil {
 		return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(result)
@@ -50,27 +60,32 @@ func (state instance) requestWithin(ctx context.Context, timeout time.Duration, 
 }
 
 func (m Manager) ready(ctx context.Context, state instance) error {
+	_, err := state.readyRules(ctx)
+	return err
+}
+
+func (state instance) readyRules(ctx context.Context) ([]Rule, error) {
 	var version struct{ Version string }
 	if err := state.request(ctx, http.MethodGet, "/version", nil, &version); err != nil {
-		return err
+		return nil, err
 	}
 	if version.Version != Version {
-		return i18n.Message("unexpected Mihomo version")
+		return nil, i18n.Message("unexpected Mihomo version")
 	}
-	var rules struct{ Rules []json.RawMessage }
-	if err := state.request(ctx, http.MethodGet, "/rules", nil, &rules); err != nil {
-		return err
+	rules, err := state.rules(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if len(rules.Rules) == 0 {
-		return i18n.Message("Mihomo rules are not ready")
+	if len(rules) == 0 {
+		return nil, i18n.Message("Mihomo rules are not ready")
 	}
-	if state.Proxy != "" {
+	if state.Proxy != "" && !state.Paused {
 		dialer := net.Dialer{Timeout: time.Second}
 		conn, err := dialer.DialContext(ctx, "tcp", state.Proxy)
 		if err != nil {
-			return i18n.Message("Mihomo proxy listener is not ready")
+			return nil, i18n.Message("Mihomo proxy listener is not ready")
 		}
 		conn.Close()
 	}
-	return nil
+	return rules, nil
 }

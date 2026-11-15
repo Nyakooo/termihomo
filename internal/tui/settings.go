@@ -17,7 +17,7 @@ type settings struct {
 
 var defaultKeys = map[string]string{
 	"quit": "q", "help": "?", "refresh": "r", "search": "/", "sort": "s",
-	"test": "t", "log-level": "l",
+	"log-level": "v",
 }
 
 func loadSettings(dir string) (settings, error) {
@@ -38,9 +38,13 @@ func loadSettings(dir string) (settings, error) {
 	used := map[string]bool{
 		"tab": true, "shift+tab": true, "left": true, "right": true,
 		"up": true, "down": true, "j": true, "k": true, "enter": true, "esc": true,
-		"ctrl+c": true, "i": true, "a": true, "x": true, "R": true, "u": true,
-		"1": true, "2": true, "3": true, "4": true, "5": true, "6": true, "7": true,
+		"ctrl+c": true, "ctrl+p": true, "ctrl+t": true, "ctrl+b": true, "ctrl+f": true, "ctrl+u": true, "ctrl+d": true,
+		"pgup": true, "pgdown": true, "g": true, "home": true, "end": true, "h": true, "l": true,
+		"f": true, "t": true, "[": true, "]": true, "e": true, "w": true, "b": true, "m": true, "d": true, "p": true, "c": true, "i": true, "a": true, "x": true, "ctrl+r": true, "u": true,
+		"1": true, "2": true, "3": true, "4": true, "5": true,
 	}
+	// Older settings may contain the retired single-node test binding.
+	delete(config.Keys, "test")
 	for action := range config.Keys {
 		if _, ok := defaultKeys[action]; !ok {
 			return config, i18n.Message("settings contain an unknown shortcut action")
@@ -58,6 +62,10 @@ func loadSettings(dir string) (settings, error) {
 
 func (s settings) key(action string) string {
 	if key := s.Keys[action]; key != "" {
+		// Older settings may explicitly bind log levels to the former default.
+		if action == "log-level" && (key == "l" || key == "L") {
+			return defaultKeys[action]
+		}
 		return key
 	}
 	return defaultKeys[action]

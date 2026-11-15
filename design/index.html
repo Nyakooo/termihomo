@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Termihomo · TUI 设计图纸</title>
+<style>
+:root{
+  --bg0:#05080f; --bg1:#0a101c; --bg2:#0e1626; --bg3:#152034;
+  --bd:#1c2a42; --bd2:#2a3d5c;
+  --fg:#d7e2f0; --dim:#7e8fa8; --faint:#4d5f7c;
+  --acc:#22d3ee; --ok:#34d399; --warn:#fbbf24; --err:#fb7185;
+  --info:#60a5fa; --up:#c084fc; --down:#38bdf8; --sel:#13233a;
+  --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg0); color:var(--fg); font-family:var(--sans);
+  font-size:15px; line-height:1.65; overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; z-index:-2; pointer-events:none;
+  background:
+    radial-gradient(900px 500px at 85% -5%, rgba(34,211,238,.07), transparent 60%),
+    radial-gradient(800px 600px at -10% 30%, rgba(192,132,252,.05), transparent 60%),
+    radial-gradient(700px 500px at 60% 110%, rgba(56,189,248,.05), transparent 60%),
+    var(--bg0);
+}
+body::after{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.5;
+  background-image:
+    linear-gradient(rgba(28,42,66,.28) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28,42,66,.28) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse at 50% 20%, #000 30%, transparent 80%);
+}
+::selection{background:rgba(34,211,238,.28)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg1)}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:5px;border:2px solid var(--bg1)}
+::-webkit-scrollbar-thumb:hover{background:var(--acc)}
+a{color:var(--acc);text-decoration:none}
+
+/* ---------- nav ---------- */
+nav{
+  position:fixed; top:0; left:0; right:0; z-index:50; height:56px;
+  display:flex; align-items:center; gap:22px; padding:0 28px;
+  background:rgba(10,16,28,.86); backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--bd);
+}
+nav .brand{font-family:var(--mono); font-weight:700; letter-spacing:.06em; color:var(--acc); white-space:nowrap}
+nav .brand b{background:var(--acc); color:var(--bg0); padding:2px 8px; border-radius:4px; margin-right:8px}
+nav .links{display:flex; gap:4px; overflow-x:auto; scrollbar-width:none}
+nav .links::-webkit-scrollbar{display:none}
+nav .links a{
+  color:var(--dim); font-size:13px; padding:6px 11px; border-radius:6px; white-space:nowrap;
+  transition:color .15s, background .15s;
+}
+nav .links a:hover{color:var(--fg); background:var(--bg3)}
+nav .links a.on{color:var(--bg0); background:var(--acc)}
+nav .ver{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--faint); white-space:nowrap}
+section{scroll-margin-top:76px}
+
+/* ---------- hero ---------- */
+header.hero{max-width:1240px; margin:0 auto; padding:110px 28px 30px}
+.kicker{font-family:var(--mono); font-size:12px; letter-spacing:.35em; color:var(--acc); text-transform:uppercase}
+h1{font-size:clamp(30px,4.5vw,52px); line-height:1.15; margin:14px 0 10px; font-weight:800; letter-spacing:-.01em}
+h1 .grad{background:linear-gradient(92deg,var(--acc) 10%,var(--down) 45%,var(--up) 90%); -webkit-background-clip:text; background-clip:text; color:transparent}
+.hero p.sub{color:var(--dim); max-width:760px; font-size:16px}
+.meta-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+.meta{font-family:var(--mono); font-size:12px; color:var(--dim); border:1px solid var(--bd); background:var(--bg1); padding:5px 12px; border-radius:999px}
+.meta b{color:var(--acc); font-weight:600}
+
+/* ---------- section scaffolding ---------- */
+.wrap{max-width:1240px; margin:0 auto; padding:56px 28px}
+.sec-head{display:flex; align-items:baseline; gap:16px; margin-bottom:8px}
+.sec-no{font-family:var(--mono); font-size:13px; color:var(--acc); border:1px solid var(--bd2); padding:3px 10px; border-radius:6px; background:var(--bg1)}
+h2{font-size:26px; font-weight:750; letter-spacing:-.01em}
+.sec-desc{color:var(--dim); margin-bottom:26px; max-width:860px}
+.card{background:var(--bg1); border:1px solid var(--bd); border-radius:14px; padding:22px; position:relative}
+.card h3{font-size:15px; margin-bottom:14px; color:var(--fg); display:flex; align-items:center; gap:8px}
+.card h3::before{content:""; width:8px; height:8px; border-radius:2px; background:var(--acc); box-shadow:0 0 10px rgba(34,211,238,.6)}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+@media(max-width:980px){.grid2,.grid3{grid-template-columns:1fr}}
+.reveal{opacity:0; transform:translateY(22px); transition:opacity .6s ease, transform .6s ease}
+.reveal.in{opacity:1; transform:none}
+
+/* ---------- terminal mockup ---------- */
+.stage{display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:20px; align-items:start}
+@media(max-width:1080px){.stage{grid-template-columns:1fr}}
+.term-shell{
+  background:var(--bg1); border:1px solid var(--bd2); border-radius:14px; overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(34,211,238,.05), 0 0 60px rgba(34,211,238,.05);
+}
+.term-title{
+  display:flex; align-items:center; gap:8px; padding:10px 16px;
+  background:var(--bg2); border-bottom:1px solid var(--bd); font-family:var(--mono); font-size:12px; color:var(--dim);
+}
+.term-title .d{width:11px;height:11px;border-radius:50%}
+.term-title .t{margin-left:8px}
+.term-title .sz{margin-left:auto; color:var(--faint)}
+.term-scroll{overflow:auto; padding:14px 16px 18px; background:var(--bg0)}
+.term-scroll::-webkit-scrollbar{height:8px;width:8px}
+#screen{font-family:var(--mono); font-size:13px; line-height:1.4; white-space:pre; width:max-content; min-width:100%}
+#screen .row{display:block;min-height:1.4em}
+#screen .row.click{cursor:pointer}
+#screen .row.click:hover{filter:brightness(1.18)}
+
+/* control deck */
+.deck{display:flex; flex-direction:column; gap:14px; position:sticky; top:76px}
+.deck .card{padding:16px 18px}
+.deck label{display:block; font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--faint); text-transform:uppercase; margin-bottom:8px}
+.seg{display:flex; background:var(--bg0); border:1px solid var(--bd); border-radius:8px; padding:3px; gap:3px}
+.seg button{
+  flex:1; border:0; background:transparent; color:var(--dim); font-family:var(--mono); font-size:12px;
+  padding:7px 4px; border-radius:6px; cursor:pointer; transition:all .15s;
+}
+.seg button:hover{color:var(--fg)}
+.seg button.on{background:var(--acc); color:var(--bg0); font-weight:700}
+input[type=range]{width:100%; appearance:none; height:4px; border-radius:2px; background:var(--bd2); outline:none; margin:10px 0 4px}
+input[type=range]::-webkit-slider-thumb{
+  appearance:none; width:16px; height:16px; border-radius:50%; background:var(--acc);
+  border:3px solid var(--bg0); box-shadow:0 0 0 1px var(--acc), 0 0 12px rgba(34,211,238,.6); cursor:pointer;
+}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--acc);border:3px solid var(--bg0);cursor:pointer}
+.readout{font-family:var(--mono); font-size:12px; color:var(--dim); display:flex; justify-content:space-between}
+.readout b{color:var(--acc)}
+.bp-chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px}
+.bp{font-family:var(--mono); font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid var(--bd); color:var(--faint); transition:all .2s}
+.bp.on{border-color:var(--acc); color:var(--acc); background:rgba(34,211,238,.08); box-shadow:0 0 10px rgba(34,211,238,.15)}
+.deck .btn{
+  width:100%; border:1px solid var(--bd2); background:var(--bg2); color:var(--fg); font-family:var(--mono);
+  font-size:12px; padding:9px; border-radius:8px; cursor:pointer; transition:all .15s;
+}
+.deck .btn:hover{border-color:var(--acc); color:var(--acc)}
+.hintline{font-size:12px; color:var(--faint); margin-top:8px}
+
+/* ---------- swatches ---------- */
+.sw-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px}
+.sw{
+  border:1px solid var(--bd); border-radius:10px; overflow:hidden; cursor:pointer; background:var(--bg2);
+  transition:transform .15s, border-color .15s, box-shadow .15s;
+}
+.sw:hover{transform:translateY(-3px); border-color:var(--bd2); box-shadow:0 10px 24px rgba(0,0,0,.4)}
+.sw .chip{height:52px; position:relative}
+.sw .chip::after{content:"⧉"; position:absolute; right:8px; top:6px; font-size:12px; color:rgba(255,255,255,.55); opacity:0; transition:opacity .15s}
+.sw:hover .chip::after{opacity:1}
+.sw .inf{padding:8px 10px; font-family:var(--mono)}
+.sw .tok{font-size:12px; color:var(--fg); font-weight:700}
+.sw .hex{font-size:11px; color:var(--dim)}
+.sw .role{font-size:10.5px; color:var(--faint); font-family:var(--sans); margin-top:2px}
+.pal-title{display:flex; align-items:center; gap:10px; margin-bottom:14px; font-family:var(--mono); font-size:13px}
+.pal-title .tag{padding:2px 10px; border-radius:999px; font-size:11px; font-weight:700}
+
+/* ---------- component demos ---------- */
+.demo-term{font-family:var(--mono); font-size:12.5px; line-height:1.45; white-space:pre; background:var(--bg0); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow-x:auto}
+.spec-note{font-size:12.5px; color:var(--dim); margin-top:12px}
+.spec-note code, td code, p code, li code{font-family:var(--mono); font-size:.92em; background:var(--bg3); border:1px solid var(--bd); padding:1px 6px; border-radius:5px; color:var(--acc)}
+.anatomy{position:relative}
+.callout{display:flex; gap:8px; align-items:baseline; font-size:12.5px; color:var(--dim); margin-top:6px}
+.callout b{font-family:var(--mono); color:var(--acc); font-weight:600; min-width:86px}
+
+/* ---------- tables ---------- */
+table{width:100%; border-collapse:collapse; font-size:13.5px}
+th{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); text-align:left; padding:10px 12px; border-bottom:1px solid var(--bd2)}
+td{padding:9px 12px; border-bottom:1px solid var(--bd); color:var(--dim); vertical-align:top}
+td:first-child{color:var(--fg)}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:rgba(21,32,52,.45)}
+kbd{
+  font-family:var(--mono); font-size:11.5px; color:var(--acc); background:var(--bg0);
+  border:1px solid var(--bd2); border-bottom-width:2px; border-radius:5px; padding:2px 7px; white-space:nowrap;
+}
+
+/* ---------- pages grid ---------- */
+.page-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
+@media(max-width:980px){.page-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:640px){.page-grid{grid-template-columns:1fr}}
+.page-card{
+  background:var(--bg1); border:1px solid var(--bd); border-radius:12px; padding:16px 18px; cursor:pointer;
+  transition:all .18s; position:relative; overflow:hidden;
+}
+.page-card::before{content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--acc); opacity:0; transition:opacity .18s}
+.page-card:hover{border-color:var(--bd2); transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.4)}
+.page-card:hover::before{opacity:1}
+.page-card .g{font-family:var(--mono); font-size:22px; color:var(--acc)}
+.page-card .n{font-family:var(--mono); font-size:11px; color:var(--faint); float:right; margin-top:6px}
+.page-card h4{font-size:15px; margin:8px 0 4px}
+.page-card p{font-size:12.5px; color:var(--dim)}
+
+/* ---------- yaml ---------- */
+pre.yaml{
+  font-family:var(--mono); font-size:12.5px; line-height:1.7; background:var(--bg0);
+  border:1px solid var(--bd); border-radius:10px; padding:16px 18px; overflow-x:auto; color:var(--fg);
+}
+pre.yaml .c{color:var(--faint)} pre.yaml .k{color:var(--acc)} pre.yaml .v{color:var(--ok)} pre.yaml .s{color:var(--warn)}
+
+footer{border-top:1px solid var(--bd); margin-top:40px; padding:30px 28px 46px; text-align:center; color:var(--faint); font-size:12.5px; font-family:var(--mono)}
+footer b{color:var(--dim)}
+
+#toast{
+  position:fixed; bottom:26px; left:50%; transform:translate(-50%,20px); z-index:99; opacity:0;
+  background:var(--bg3); border:1px solid var(--acc); color:var(--acc); font-family:var(--mono); font-size:12.5px;
+  padding:9px 18px; border-radius:8px; pointer-events:none; transition:all .25s; box-shadow:0 8px 30px rgba(0,0,0,.5);
+}
+#toast.show{opacity:1; transform:translate(-50%,0)}
+.cursor-blink{animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.pulse{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand"><b>◈</b>TERMIHOMO · 设计图纸</span>
+  <div class="links" id="navlinks">
+    <a href="#screen-sec">实时屏幕</a>
+    <a href="#color-sec">色彩系统</a>
+    <a href="#comp-sec">组件规范</a>
+    <a href="#layout-sec">布局与响应式</a>
+    <a href="#pages-sec">页面结构</a>
+    <a href="#input-sec">交互映射</a>
+    <a href="#settings-sec">配置与降级</a>
+  </div>
+  <span class="ver">spec v1.0 · 2026-11-11</span>
+</nav>
+
+<header class="hero">
+  <div class="kicker">Terminal User Interface · Design Blueprint</div>
+  <h1>Termihomo <span class="grad">TUI 设计图纸</span></h1>
+  <p class="sub">Mihomo 内核的终端管理界面设计规范。本文档与 <code style="font-family:var(--mono);color:var(--acc)">internal/tui</code> 的实现一一对应：全部色值、断点、组件与快捷键均取自真实代码，可直接作为验收与二次开发的基准。</p>
+  <div class="meta-row">
+    <span class="meta">渲染 <b>Bubble Tea v2</b></span>
+    <span class="meta">最小尺寸 <b>80 × 24</b></span>
+    <span class="meta">页面 <b>9</b></span>
+    <span class="meta">主题 <b>dark / light / auto</b></span>
+    <span class="meta">视觉 <b>colorful / minimal</b></span>
+    <span class="meta">色彩降级 <b>Truecolor → 256 → 16 → 无</b></span>
+    <span class="meta">输入 <b>键盘 + 鼠标</b></span>
+  </div>
+</header>
+
+<!-- ============ 01 LIVE SCREEN ============ -->
+<section id="screen-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">01</span><h2>实时屏幕 · Live Screen</h2></div>
+  <p class="sec-desc reveal">下方是按实现规则实时渲染的终端模型：切换主题 / 视觉模式、拖动宽高滑块即可验证断点与最小尺寸门禁；点击页签切换页面，点击右上角 <b style="color:var(--up)">◐ 视觉芯片</b> 可直接切换视觉模式（与 TUI 内的鼠标热区一致）。</p>
+  <div class="stage reveal">
+    <div class="term-shell">
+      <div class="term-title">
+        <span class="d" style="background:#fb7185"></span>
+        <span class="d" style="background:#fbbf24"></span>
+        <span class="d" style="background:#34d399"></span>
+        <span class="t">termihomo — tui</span>
+        <span class="sz" id="szlabel">120 × 30</span>
+      </div>
+      <div class="term-scroll"><div id="screen"></div></div>
+    </div>
+    <div class="deck">
+      <div class="card">
+        <label>Theme · 主题 (T)</label>
+        <div class="seg" id="seg-theme">
+          <button data-v="dark" class="on">Dark</button>
+          <button data-v="light">Light</button>
+        </div>
+        <div class="hintline">auto 模式读取 <code>COLORFGBG</code> 判定，此处手动演示两种结果。</div>
+      </div>
+      <div class="card">
+        <label>Visual · 视觉模式 (v)</label>
+        <div class="seg" id="seg-visual">
+          <button data-v="colorful" class="on">Colorful</button>
+          <button data-v="minimal">Minimal</button>
+        </div>
+        <div class="hintline">minimal 关闭背景填充，仅保留前景色与边框。</div>
+      </div>
+      <div class="card">
+        <label>Width · 宽度（列）</label>
+        <input type="range" id="r-width" min="60" max="150" value="120">
+        <div class="readout"><span>60</span><b id="w-out">120 cols</b><span>150</span></div>
+        <label style="margin-top:14px">Height · 高度（行）</label>
+        <input type="range" id="r-height" min="16" max="40" value="30">
+        <div class="readout"><span>16</span><b id="h-out">30 rows</b><span>40</span></div>
+        <div class="bp-chips" id="bp-chips">
+          <span class="bp" data-bp="min">&lt;80 门禁</span>
+          <span class="bp" data-bp="88">≥88 双栏</span>
+          <span class="bp" data-bp="96">≥96 连接双栏</span>
+          <span class="bp" data-bp="110">≥110 三栏</span>
+        </div>
+      </div>
+      <div class="card">
+        <button class="btn" id="btn-reset">⟲ 重置视图（120×30 · dark · colorful）</button>
+        <div class="hintline">数据为演示样本，速率 / 运行时长 / 迷你图每秒刷新。</div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 02 COLOR ============ -->
+<section id="color-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">02</span><h2>色彩系统 · Color Tokens</h2></div>
+  <p class="sec-desc reveal">双主题各 18 个令牌，源自 <code>internal/tui/style.go</code> 的 <code>darkPalette</code> / <code>lightPalette</code>。冷调深蓝基底 + 青色主强调，紫 / 天蓝区分上下行流量，语义四色贯穿状态、延迟与日志。点击色卡复制 HEX。</p>
+  <div class="grid2">
+    <div class="card reveal">
+      <div class="pal-title"><span class="tag" style="background:var(--acc);color:var(--bg0)">DARK</span> 默认主题 · 深海蓝</div>
+      <div class="sw-grid" id="sw-dark"></div>
+    </div>
+    <div class="card reveal">
+      <div class="pal-title"><span class="tag" style="background:#e9edf2;color:#17222f">LIGHT</span> 浅色主题 · 晨雾灰</div>
+      <div class="sw-grid" id="sw-light"></div>
+    </div>
+  </div>
+  <div class="card reveal" style="margin-top:18px">
+    <h3>语义约定</h3>
+    <table>
+      <tr><th>令牌</th><th>用途</th><th>规则</th></tr>
+      <tr><td><code>acc</code></td><td>品牌 / 页签选中 / 面板标题 / 快捷键</td><td>唯一的高饱和主色，选中态以 <code>bg0</code> 文字反白</td></tr>
+      <tr><td><code>ok / warn / err</code></td><td>内核状态、延迟分级、日志级别</td><td>延迟 <code>&lt;150ms</code> ok · <code>&lt;250ms</code> warn · 其余 err · <code>≤0</code> faint</td></tr>
+      <tr><td><code>up / down</code></td><td>上行紫 / 下行天蓝</td><td>流量图、速率摘要、图例固定方向配色，不随主题互换</td></tr>
+      <tr><td><code>sel</code></td><td>芯片底色 / 列表选中行</td><td>所有 chip 的统一底，保证多彩而不刺眼</td></tr>
+      <tr><td><code>bg0…bg3</code></td><td>终端底 / 面板底 / 浮层 / 高亮块</td><td>四级明度阶梯，rich 模式下面板与栏铺满 <code>bg1</code></td></tr>
+      <tr><td><code>fg / dim / faint</code></td><td>正文 / 次要 / 占位</td><td>三级文字灰阶，键值对 key 用 dim、空值用 faint「—」</td></tr>
+    </table>
+  </div>
+</div></section>
+
+<!-- ============ 03 COMPONENTS ============ -->
+<section id="comp-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">03</span><h2>组件规范 · Components</h2></div>
+  <p class="sec-desc reveal">所有组件由 <code>style.go</code> 的纯函数绘制，零新增依赖（仅复用 <code>charmbracelet/x/ansi</code> 做宽度计算）。以下示例按 dark · colorful 渲染。</p>
+  <div class="grid2">
+    <div class="card reveal anatomy">
+      <h3>Panel · 面板</h3>
+      <div class="demo-term" id="demo-panel"></div>
+      <div class="callout"><b>边框</b>圆角 ┌─┐│└┘，颜色 bd；标题嵌入顶边，acc 色，前后各一空格</div>
+      <div class="callout"><b>内宽</b>outer − 4，内容左右各 1 空格衬垫，超宽截断不折行</div>
+      <div class="callout"><b>rich</b>colorful 模式整行铺 bg1 连续底色（嵌套 reset 后重新上底）</div>
+    </div>
+    <div class="card reveal">
+      <h3>Chip / Dot / 状态</h3>
+      <div class="demo-term" id="demo-chips"></div>
+      <div class="spec-note">chip = 前景语义色 + <code>sel</code> 底 + 左右各 1 空格；dot ● 用于列表行首。状态色：Running→ok · Starting/Stopping→warn · Stopped→dim · NotInstalled→faint · Error→err。</div>
+    </div>
+    <div class="card reveal">
+      <h3>Latency Bar · 延迟条</h3>
+      <div class="demo-term" id="demo-latency"></div>
+      <div class="spec-note">填充 <code>█</code> 数 = delay/30（至少 1，封顶宽度），其余 <code>░</code> faint；颜色按 msHex 阈值分级，一眼读出快慢。</div>
+    </div>
+    <div class="card reveal">
+      <h3>Sparkline / Area Chart · 流量图</h3>
+      <div class="demo-term" id="demo-charts"></div>
+      <div class="spec-note">单行迷你图用 ▁▂▃▄▅▆▇█ 按最大值归一；多行面积图用 █ 填充，下行 down 色、上行 up 色，窗口取最近 w 个采样。</div>
+    </div>
+    <div class="card reveal">
+      <h3>Form · 输入浮层</h3>
+      <div class="demo-term" id="demo-form"></div>
+      <div class="spec-note">宽 <code>max(34, min(64, W−8))</code> 居中；失败时保留输入并在框内以 err 色回显原因（脱敏后）；<kbd>Ctrl+V</kbd> 读取系统剪贴板（wl-paste → pbpaste → xclip → xsel）。</div>
+    </div>
+    <div class="card reveal">
+      <h3>Confirm / Resize Notice · 确认与门禁</h3>
+      <div class="demo-term" id="demo-confirm"></div>
+      <div class="spec-note">确认框宽 <code>max(30, min(60, W−8))</code>，y/n 作答；低于 80×24 时整屏替换为尺寸提示，显示最小值与当前值。</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 04 LAYOUT ============ -->
+<section id="layout-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">04</span><h2>布局与响应式 · Layout</h2></div>
+  <p class="sec-desc reveal">整屏固定骨架：<b>顶栏 1 行 + 页签栏 1 行 + 分隔线 1 行 + 正文 (H−6) 行 + 操作栏 2 行 + 状态栏 1 行</b>。所有行按显示宽度截断，正文超高裁剪、不足补空行，任何尺寸下不破坏骨架。</p>
+  <div class="card reveal">
+    <h3>骨架解剖</h3>
+    <div class="demo-term" id="demo-anatomy"></div>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+    <div class="card reveal">
+      <h3>断点规则</h3>
+      <table>
+        <tr><th>条件</th><th>行为</th></tr>
+        <tr><td><code>W &lt; 80</code> 或 <code>H &lt; 24</code></td><td>整屏替换为 Resize Notice，不渲染业务</td></tr>
+        <tr><td><code>W ≥ 110</code></td><td>Overview 三栏等宽：(W−4)/3，间距 2</td></tr>
+        <tr><td><code>W ≥ 88</code></td><td>Overview 双栏 (W−2)/2 + 第三面板通栏；Proxies 左 55% / Groups 与 Profile 左 50% / Core 左 55%，右栏 = W−左−2</td></tr>
+        <tr><td><code>W ≥ 96</code></td><td>Connections 左 55% 列表 + 右详情</td></tr>
+        <tr><td>页签总宽 &gt; W</td><td>先保留序号与名称，空间仍不足时使用「glyph+序号」（如 ◉1）</td></tr>
+        <tr><td>窄屏（&lt;88）</td><td>所有双栏退化为单栏纵向堆叠</td></tr>
+      </table>
+    </div>
+    <div class="card reveal">
+      <h3>浮层与状态栏</h3>
+      <table>
+        <tr><th>元素</th><th>规则</th></tr>
+        <tr><td>浮层优先级</td><td>Confirm &gt; Form &gt; Help，居中覆盖正文，不影响骨架</td></tr>
+        <tr><td>Help 宽</td><td><code>max(40, min(72, W−8))</code></td></tr>
+        <tr><td>状态栏</td><td>左侧显示导航提示或操作反馈，右侧保留速率摘要。上面两行是当前页和全局操作按钮，按钮上显示快捷键</td></tr>
+        <tr><td>顶栏</td><td>品牌芯片 + 版本 + 状态 pills；空间不足时先丢弃中部 pills，视觉芯片永远靠右保留</td></tr>
+        <tr><td>速率摘要</td><td>↑up 色 / ↓down 色 + LIVE(ok) 或 STALE(warn)</td></tr>
+      </table>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 05 PAGES ============ -->
+<section id="pages-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">05</span><h2>页面结构 · Pages</h2></div>
+  <p class="sec-desc reveal">9 个页面，glyph + 数字直达（<kbd>1</kbd>–<kbd>9</kbd>），<kbd>Tab</kbd>/<kbd>←</kbd><kbd>→</kbd> 循环切换。点击卡片可在上方实时屏幕中预览对应页面。</p>
+  <div class="page-grid reveal" id="page-grid"></div>
+</div></section>
+
+<!-- ============ 06 INPUT ============ -->
+<section id="input-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">06</span><h2>交互映射 · Input Map</h2></div>
+  <p class="sec-desc reveal">键盘优先、鼠标等价。所有可点元素在渲染时登记热区（hit region），Update 单协程顺序处理，无竞态。</p>
+  <div class="grid2">
+    <div class="card reveal">
+      <h3>全局键盘</h3>
+      <table>
+        <tr><th>按键</th><th>动作</th></tr>
+        <tr><td><kbd>h</kbd> / <kbd>l</kbd> · <kbd>Tab</kbd> · <kbd>←</kbd> <kbd>→</kbd></td><td>切换页面，策略组中 l 进入选项、h 返回</td></tr>
+        <tr><td><kbd>1</kbd>–<kbd>9</kbd></td><td>直达页面</td></tr>
+        <tr><td><kbd>↑</kbd> <kbd>↓</kbd> / <kbd>j</kbd> <kbd>k</kbd></td><td>移动选择</td></tr>
+        <tr><td><kbd>gg</kbd> / <kbd>G</kbd></td><td>跳到首行或末行</td></tr>
+        <tr><td><kbd>Ctrl+U</kbd> / <kbd>Ctrl+D</kbd>，<kbd>Ctrl+B</kbd> / <kbd>Ctrl+F</kbd></td><td>翻半页或翻整页</td></tr>
+        <tr><td><kbd>r</kbd></td><td>刷新快照</td></tr>
+        <tr><td><kbd>/</kbd></td><td>搜索（代理 / 分组 / 规则 / 连接）</td></tr>
+        <tr><td><kbd>s</kbd> / <kbd>t</kbd></td><td>按延迟排序 / 测试选中代理</td></tr>
+        <tr><td><kbd>Enter</kbd> / <kbd>Esc</kbd></td><td>打开分组、选项、详情 / 关闭与清除过滤</td></tr>
+        <tr><td><kbd>Ctrl+V</kbd></td><td>表单内粘贴系统剪贴板</td></tr>
+        <tr><td><kbd>v</kbd> / <kbd>T</kbd></td><td>循环视觉模式 / 循环主题</td></tr>
+        <tr><td><kbd>?</kbd> / <kbd>q</kbd></td><td>帮助 / 退出（保留 Mihomo 运行）</td></tr>
+      </table>
+    </div>
+    <div class="card reveal">
+      <h3>页面专属 & 鼠标</h3>
+      <table>
+        <tr><th>上下文</th><th>动作</th></tr>
+        <tr><td>Profile</td><td><kbd>a</kbd> 添加订阅 · <kbd>i</kbd> 导入 YAML · <kbd>u</kbd> 更新</td></tr>
+        <tr><td>Overview</td><td><kbd>a</kbd> 启动 · <kbd>x</kbd> 停止 · <kbd>R</kbd> 重启</td></tr>
+        <tr><td>Core</td><td><kbd>i</kbd> 安装 · <kbd>a</kbd> 启动 · <kbd>x</kbd> 停止 · <kbd>R</kbd> 重启</td></tr>
+        <tr><td>Logs</td><td><kbd>L</kbd> 级别 · <kbd>p</kbd> 暂停 · <kbd>c</kbd> 清空</td></tr>
+        <tr><td>Connections</td><td><kbd>Enter</kbd> 详情 · <kbd>x</kbd> 关闭连接</td></tr>
+        <tr><td>鼠标点击</td><td>切换视觉模式 · 切页 · 选中列表行 · 执行操作 · 在表单中定位光标、粘贴、提交或取消</td></tr>
+        <tr><td>滚轮</td><td>浏览列表、分组选项和日志历史</td></tr>
+        <tr><td>粘贴语义</td><td>终端原生粘贴走 bracketed paste；<kbd>Ctrl+V</kbd> 由应用主动读剪贴板，两者都支持</td></tr>
+        <tr><td>快捷键重映射</td><td>settings.yaml 的 keys 段，冲突与保留键在加载时校验拒绝</td></tr>
+      </table>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ 07 SETTINGS ============ -->
+<section id="settings-sec"><div class="wrap">
+  <div class="sec-head reveal"><span class="sec-no">07</span><h2>配置与色彩降级 · Settings & Fallback</h2></div>
+  <p class="sec-desc reveal">外观持久化于 <code>~/.config/termihomo/settings.yaml</code>（0600，原子写入）。色彩能力按终端环境自动降级，任何环境下骨架与语义不变。</p>
+  <div class="grid2">
+    <div class="card reveal">
+      <h3>settings.yaml</h3>
+<pre class="yaml"><span class="c"># Termihomo 外观与行为</span>
+<span class="k">refresh-seconds</span>: <span class="v">3</span>        <span class="c"># 1–300，快照刷新周期</span>
+<span class="k">theme</span>: <span class="s">dark</span>               <span class="c"># dark | light | auto</span>
+<span class="k">visual</span>: <span class="s">colorful</span>           <span class="c"># colorful | minimal</span>
+<span class="k">keys</span>:                       <span class="c"># 可选重映射</span>
+  <span class="k">search</span>: <span class="s">/</span>
+  <span class="k">test</span>: <span class="s">t</span></pre>
+      <div class="spec-note"><b>auto 主题</b>：读取 <code>COLORFGBG</code> 末段，值为 15 / 7 / 231 判定浅色终端，否则 dark。<b>校验</b>：非法 theme/visual、越界刷新周期、未知或冲突快捷键一律报错拒绝加载。</div>
+    </div>
+    <div class="card reveal">
+      <h3>色彩能力探测（colorMode）</h3>
+      <table>
+        <tr><th>环境</th><th>模式</th><th>输出</th></tr>
+        <tr><td><code>NO_COLOR</code> 存在 或 TERM 为空/dumb</td><td>0</td><td>纯文本，无任何 SGR</td></tr>
+        <tr><td><code>COLORTERM=truecolor/24bit</code></td><td>3</td><td>38;2;r;g;b 真彩，HEX 原样</td></tr>
+        <tr><td>TERM 含 <code>256</code></td><td>2</td><td>38;5;n，最近 256 色（含灰阶带）</td></tr>
+        <tr><td>xterm / screen / tmux / rxvt 前缀</td><td>3</td><td>按真彩处理</td></tr>
+        <tr><td>其他</td><td>1</td><td>最近 ANSI 16 色</td></tr>
+      </table>
+      <div class="spec-note">降级只影响颜色精度：面板边框、glyph、布局、语义结构在 mode 0 下依然完整可用。</div>
+    </div>
+  </div>
+</div></section>
+
+<footer>
+  <b>◈ TERMIHOMO</b> · TUI Design Blueprint · 与 internal/tui 实现同步 · dark/light × colorful/minimal · 80×24 minimum
+</footer>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================= palette (verbatim from style.go) ================= */
+const PAL = {
+  dark:{bg0:"#05080f",bg1:"#0a101c",bg2:"#0e1626",bg3:"#152034",bd:"#1c2a42",bd2:"#2a3d5c",fg:"#d7e2f0",dim:"#7e8fa8",faint:"#4d5f7c",acc:"#22d3ee",ok:"#34d399",warn:"#fbbf24",err:"#fb7185",info:"#60a5fa",up:"#c084fc",down:"#38bdf8",sel:"#13233a"},
+  light:{bg0:"#e9edf2",bg1:"#f4f6f9",bg2:"#ffffff",bg3:"#edf1f6",bd:"#d9e1eb",bd2:"#c3cfdd",fg:"#17222f",dim:"#5c6c83",faint:"#8b99ac",acc:"#0891b2",ok:"#059669",warn:"#b45309",err:"#e11d48",info:"#2563eb",up:"#7c3aed",down:"#0284c7",sel:"#e2eef5"}
+};
+const ROLES = {bg0:"终端底色",bg1:"面板/栏底",bg2:"浮层表面",bg3:"高亮块",bd:"边框",bd2:"强边框/滑块",fg:"正文",dim:"次要文字",faint:"占位/弱信息",acc:"主强调",ok:"成功/低延迟",warn:"警告/中延迟",err:"错误/高延迟",info:"信息/rule 模式",up:"上行流量",down:"下行流量",sel:"芯片底/选中"};
+const ORDER = ["bg0","bg1","bg2","bg3","bd","bd2","fg","dim","faint","acc","ok","warn","err","info","up","down","sel"];
+
+/* ================= tiny terminal renderer ================= */
+const esc = t => t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const plain = h => h.replace(/<[^>]*>/g,"");
+function cw(ch){
+  const c=ch.codePointAt(0);
+  return (c>=0x1100&&c<=0x115F)||(c>=0x2E80&&c<=0xA4CF)||(c>=0xAC00&&c<=0xD7A3)||(c>=0xF900&&c<=0xFAFF)||(c>=0xFE30&&c<=0xFE4F)||(c>=0xFF00&&c<=0xFF60)||(c>=0xFFE0&&c<=0xFFE6)||(c>=0x20000&&c<=0x3FFFD)?2:1;
+}
+function dw(s){ let n=0; for(const ch of s) n+=cw(ch); return n; }
+const W = h => dw(plain(h));
+function S(p,tok,text,bgTok){
+  if(text==="") return "";
+  let st = "color:"+p[tok];
+  if(bgTok) st += ";background:"+p[bgTok];
+  return '<span style="'+st+'">'+esc(text)+"</span>";
+}
+function fit(h,w){
+  const n = W(h);
+  if(n===w) return h;
+  if(n<w) return h+" ".repeat(w-n);
+  let out="", used=0;
+  for(const ch of plain(h)){ const c=cw(ch); if(used+c>w) break; out+=ch; used+=c; }
+  return esc(out);
+}
+function panel(p,rich,title,lines,w){
+  const inner=w-4, out=[];
+  if(!rich) {
+    const heading=title?"  "+S(p,"acc",title)+"  ":"";
+    return [heading+S(p,"bd2","─".repeat(Math.max(0,w-W(heading)))),
+      ...lines.map(ln=>"  "+fit(ln,inner)+"  "), S(p,"bd2","─".repeat(w))];
+  }
+  const badge=title?S(p,"bg0"," "+title+" ","acc"):"";
+  out.push(S(p,"bd2","╭─")+badge+S(p,"bd2","─".repeat(Math.max(0,w-3-W(badge)))+"╮"));
+  for(const ln of lines) out.push(S(p,"bd2","│")+" "+fit(ln,inner)+" "+S(p,"bd2","│"));
+  out.push(S(p,"bd2","╰"+"─".repeat(w-2)+"╯"));
+  return out.map(l=>'<span style="background:'+p.bg1+'">'+l+"</span>");
+}
+function chip(p,text,tok){ return S(p,tok," "+text+" ","sel"); }
+function joinH(p,gap,...cols){
+  let h=0; const ws=cols.map(c=>{h=Math.max(h,c.length);return Math.max(...c.map(W));});
+  const out=[];
+  for(let r=0;r<h;r++){
+    let line="";
+    cols.forEach((c,i)=>{ line+=fit(c[r]||"",ws[i]); if(i<cols.length-1) line+=" ".repeat(gap); });
+    out.push(line);
+  }
+  return out;
+}
+const SPARK="▁▂▃▄▅▆▇█";
+function sparkline(p,vals,w,tok){
+  vals=vals.slice(-w); const mx=Math.max(1,...vals);
+  return S(p,tok,vals.map(v=>SPARK[Math.min(7,Math.floor(v/mx*7))]).join(""));
+}
+function areaChart(p,vals,w,h,tok){
+  vals=vals.slice(-w); const mx=Math.max(1,...vals);
+  const lv=vals.map(v=>Math.floor(Math.max(0,v)/mx*h));
+  const out=[];
+  for(let r=0;r<h;r++){
+    const th=h-r; let s="";
+    for(let i=0;i<w;i++) s+= (i<lv.length && lv[i]>=th)?"█":" ";
+    out.push(S(p,tok,s));
+  }
+  return out;
+}
+function msTok(p,d){ return d<=0?"faint":d<150?"ok":d<250?"warn":"err"; }
+function latencyBar(p,d,w){
+  if(d<=0) return S(p,"faint","░".repeat(w));
+  const f=Math.min(w,Math.max(1,Math.floor(d/30)));
+  return S(p,msTok(p,d),"█".repeat(f))+S(p,"faint","░".repeat(w-f));
+}
+function kv(p,k,v){ return S(p,"dim",k.padEnd(12))+v; }
+function clamp(lines,n){ lines=lines.slice(0,n); while(lines.length<n) lines.push(""); return lines; }
+
+/* ================= demo data ================= */
+const GROUPS=[["Proxy","HK-01"],["Auto","JP-03"],["Streaming","US-02"],["AI","SG-01"],["Final","DIRECT"],["Apple","DIRECT"]];
+const PROXIES=[
+  ["HK-01","Shadowsocks",42],["HK-02","Shadowsocks",58],["JP-03","Trojan",87],
+  ["JP-01","VMess",104],["SG-01","Trojan",126],["US-02","VMess",189],
+  ["US-01","Shadowsocks",233],["DE-01","Trojan",301],["DIRECT","Direct",0],["REJECT","Reject",0]
+];
+const CONNS=[
+  ["github.com:443","Proxy › HK-01","1.2 MB","84 KB"],
+  ["api.openai.com:443","AI › SG-01","3.4 MB","210 KB"],
+  ["www.youtube.com:443","Streaming › US-02","48.6 MB","1.1 MB"],
+  ["registry.npmjs.org:443","Proxy › JP-03","6.8 MB","92 KB"],
+  ["clients4.google.com:443","DIRECT","220 KB","41 KB"],
+  ["telemetry.example.com:443","REJECT","0 B","0 B"]
+];
+const RULES=[["GEOSITE","cn","DIRECT"],["GEOIP","cn","DIRECT"],["GEOSITE","geolocation-!cn","Proxy"],["DOMAIN-SUFFIX","openai.com","AI"],["DOMAIN-SUFFIX","netflix.com","Streaming"],["MATCH","—","Final"]];
+const LOGS=[["info","ok","[TCP] 192.168.1.24:52341 --> github.com:443 match GeoSite(geolocation-!cn) using Proxy[HK-01]"],["debug","faint","[DNS] api.openai.com --> 104.18.7.192 (fake-ip)"],["info","ok","[TCP] 192.168.1.24:52342 --> www.youtube.com:443 using Streaming[US-02]"],["warning","warn","[UDP] dial timeout 5s, retry via fallback group"],["info","ok","configuration reloaded, 0 errors"],["error","err","provider health-check: US-01 unreachable (context deadline exceeded)"]];
+
+/* ================= live model ================= */
+const M = {
+  theme:"dark", visual:"colorful", width:120, height:30, page:0,
+  up:182*1024, down:2.4*1024*1024, uptime:4217, cursor:0,
+  downs:Array.from({length:160},(_,i)=>Math.max(0, 1.6e6+1.3e6*Math.sin(i/7)+Math.random()*9e5)),
+  ups:Array.from({length:160},(_,i)=>Math.max(0, 1.4e5+1.1e5*Math.sin(i/5+2)+Math.random()*8e4))
+};
+const PAGES=[
+  {g:"◉",name:"Overview",zh:"总览",desc:"内核状态 / 订阅档案 / 选择器三面板，宽屏三栏、窄屏堆叠"},
+  {g:"▤",name:"Proxies",zh:"代理",desc:"节点列表 + 延迟条，≥88 双栏详情；搜索 / 排序 / 测速"},
+  {g:"▦",name:"Groups",zh:"分组",desc:"策略组与当前选中节点，Enter 进入选项切换"},
+  {g:"▥",name:"Profile",zh:"订阅",desc:"档案来源 / 更新流水线 / 安全保证；添加订阅自动装内核"},
+  {g:"≈",name:"Traffic",zh:"流量",desc:"四指标瓦片 + 上下行面积图，采样窗口随宽度伸缩"},
+  {g:"≡",name:"Logs",zh:"日志",desc:"内核日志流，级别着色，可暂停 / 清空 / 切换级别"},
+  {g:"▣",name:"Core",zh:"内核",desc:"版本 / 控制器 / 安装与生命周期操作，SHA-256 校验安装"},
+  {g:"⊞",name:"Rules",zh:"规则",desc:"规则链列表：类型 / 载荷 / 目标策略，可搜索"},
+  {g:"⇄",name:"Connections",zh:"连接",desc:"活动连接表，≥96 双栏详情，可单条关闭"}
+];
+const fmtB = b => b>=1048576?(b/1048576).toFixed(1)+" MB":b>=1024?(b/1024).toFixed(0)+" KB":Math.round(b)+" B";
+const fmtUp = s => { const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60; return (h?h+"h":"")+(m?m+"m":"")+x+"s"; };
+
+function render(){
+  const p=PAL[M.theme], rich=M.visual==="colorful", w=M.width, h=M.height;
+  const scr=document.getElementById("screen");
+  scr.style.color=p.fg;
+  scr.parentElement.style.background=p.bg0;
+  document.getElementById("szlabel").textContent=w+" × "+h;
+  document.getElementById("w-out").textContent=w+" cols";
+  document.getElementById("h-out").textContent=h+" rows";
+  document.querySelectorAll("#bp-chips .bp").forEach(el=>{
+    const b=el.dataset.bp;
+    const on = b==="min" ? (w<80||h<24) : w>=+b;
+    el.classList.toggle("on",on);
+  });
+  let rows=[];
+  if(w<80||h<24){
+    const bw=Math.max(4,Math.min(46,w));
+    const box=panel(p,rich,"Display too small",[
+      S(p,"warn","⚠ 终端尺寸不足"),"",
+      "最小显示尺寸 "+S(p,"acc","80 × 24"),
+      "当前尺寸 "+S(p,"err",w+" × "+h),"",
+      S(p,"dim","请放大终端窗口后继续")
+    ],bw);
+    const pad=Math.max(0,Math.floor((h-box.length)/2));
+    rows=Array(pad).fill("").concat(box);
+    rows=clamp(rows,h).map(l=>'<span class="row">'+l+"</span>");
+    scr.innerHTML=rows.join("");
+    return;
+  }
+  /* topbar */
+  const brand=S(p,"bg0"," ◈ TERMIHOMO ","acc");
+  const visualChip=chip(p,"◐ "+(rich?"Colorful":"Minimal"),"up");
+  let pills=chip(p,"Running","ok")+" "+chip(p,"rule","info")+" "+chip(p,"⏱ "+fmtUp(M.uptime),"dim")+" "+chip(p,"127.0.0.1:7890","faint");
+  const left=brand+" "+S(p,"faint","v1.19.34");
+  const avail=w-W(visualChip);
+  if(W(left)+W(pills)+1>avail) pills="";
+  let top=left+" ".repeat(Math.max(0,avail-W(left)-W(pills)))+pills+visualChip;
+  if(rich) top='<span style="background:'+p.bg1+'">'+fit(top,w)+"</span>";
+  rows.push('<span class="row click" data-act="visual">'+top+"</span>");
+  /* tab rail */
+  const mkTabs=compact=>PAGES.map((pg,i)=>{
+    const txt=compact?pg.g+(i+1):pg.g+" "+(i+1)+" "+pg.name;
+    return i===M.page?S(p,"bg0"," "+txt+" ","acc"):S(p,"dim"," "+txt+" ");
+  });
+  let tabs=mkTabs(false);
+  if(tabs.reduce((a,t)=>a+W(t)+1,0)>w) tabs=mkTabs(true);
+  let rail=tabs.map((t,i)=>'<span class="click" data-act="tab" data-i="'+i+'" style="cursor:pointer">'+t+"</span>").join(" ");
+  if(rich) rail='<span style="background:'+p.bg0+'">'+fit(rail,w)+"</span>";
+  rows.push('<span class="row">'+rail+"</span>");
+  rows.push('<span class="row">'+S(p,"bd","─".repeat(w))+"</span>");
+  /* body */
+  const bodyH=h-6, gap=2;
+  let body=[];
+  const pg=M.page;
+  if(pg===0){
+    const kernel=[
+      kv(p,"State",S(p,"ok","Running")), kv(p,"Version","v1.19.34"),
+      kv(p,"Uptime",fmtUp(M.uptime)), kv(p,"PID","48213"),
+      kv(p,"Controller","127.0.0.1:9090"), kv(p,"Proxy","127.0.0.1:7890")
+    ];
+    const cw3=w>=110?Math.floor((w-2*gap)/3):w>=88?Math.floor((w-gap)/2):w;
+    const profile=[
+      kv(p,"Source",S(p,"fg","subscription")), kv(p,"Updated","2026-11-11 09:42:18"),"",
+      S(p,"dim","Live traffic"), sparkline(p,M.downs,Math.max(4,cw3-6),"down")
+    ];
+    const sels=GROUPS.map(g=>S(p,"acc","› ")+S(p,"fg",g[0])+S(p,"dim"," → ")+S(p,"fg",g[1]));
+    if(w>=110) body=joinH(p,gap,panel(p,rich,"Kernel",kernel,cw3),panel(p,rich,"Profile",profile,cw3),panel(p,rich,"Selectors",sels,cw3));
+    else if(w>=88) body=joinH(p,gap,panel(p,rich,"Kernel",kernel,cw3),panel(p,rich,"Profile",profile,cw3)).concat(panel(p,rich,"Selectors",sels,w));
+    else body=panel(p,rich,"Kernel",kernel,w).concat(panel(p,rich,"Profile",profile,w),panel(p,rich,"Selectors",sels,w));
+  } else if(pg===1){
+    const rowsP=PROXIES.map((pr,i)=>{
+      const cur=i===M.cursor?S(p,"acc","› "):"  ";
+      const name=fit(S(p,i===M.cursor?"acc":"fg",pr[0]),14);
+      const bar=latencyBar(p,pr[2],10);
+      const ms=pr[2]>0?S(p,msTok(p,pr[2]),String(pr[2]).padStart(4)+" ms"):S(p,"faint","   —");
+      return cur+name+S(p,"faint",pr[1].padEnd(13))+bar+" "+ms;
+    });
+    if(w>=88){
+      const lw=Math.floor(w*55/100), rw=w-lw-2, pr=PROXIES[M.cursor];
+      const detail=[
+        kv(p,"Name",S(p,"acc",pr[0])), kv(p,"Type",pr[1]),
+        kv(p,"Delay",pr[2]>0?S(p,msTok(p,pr[2]),pr[2]+" ms"):S(p,"faint","—")),"",
+        kv(p,"Group","Proxy"), kv(p,"History",sparkline(p,[44,41,46,42,pr[2]||1],16,"acc")),"",
+        S(p,"dim","t 测速 · s 排序 · / 搜索")
+      ];
+      body=joinH(p,gap,panel(p,rich,"Proxies",rowsP,lw),panel(p,rich,"Detail",detail,rw));
+    } else body=panel(p,rich,"Proxies",rowsP,w);
+  } else if(pg===2){
+    const rowsG=GROUPS.map((g,i)=>(i===0?S(p,"acc","› "):"  ")+S(p,i===0?"acc":"fg",fit(g[0],14))+S(p,"dim","→ ")+S(p,"fg",g[1])+S(p,"faint","   Selector"));
+    if(w>=88){
+      const lw=Math.floor(w*50/100), rw=w-lw-2;
+      const opts=PROXIES.slice(0,7).map((pr,i)=>(i===0?S(p,"ok","● "):S(p,"faint","○ "))+S(p,"fg",pr[0]));
+      body=joinH(p,gap,panel(p,rich,"Groups",rowsG,lw),panel(p,rich,"Options · Proxy",opts,rw));
+    } else body=panel(p,rich,"Groups",rowsG,w);
+  } else if(pg===3){
+    const active=[kv(p,"Source",S(p,"fg","subscription")),kv(p,"URL",S(p,"fg","https://example.com/sub?token=…")),kv(p,"Updated","2026-11-11 09:42:18"),kv(p,"Nodes",String(PROXIES.length))];
+    const pipe=[S(p,"ok","✓ ")+S(p,"fg","下载订阅")+S(p,"dim","  →  ")+S(p,"ok","✓ ")+S(p,"fg","GeoIP/GeoSite 预取")+S(p,"dim","  →  ")+S(p,"ok","✓ ")+S(p,"fg","mihomo -t 校验")+S(p,"dim","  →  ")+S(p,"ok","✓ ")+S(p,"fg","原子切换")];
+    const safety=[S(p,"dim","· 订阅 URL 仅存私有配置，不写入日志"),S(p,"dim","· 校验错误回显前脱敏 secret 与 URL"),S(p,"dim","· 控制器仅绑定 127.0.0.1"),S(p,"dim","· 安装内核校验固定 SHA-256")];
+    if(w>=88){
+      const lw=Math.floor(w*50/100), rw=w-lw-2;
+      body=joinH(p,gap,panel(p,rich,"Active profile",active,lw),panel(p,rich,"Update pipeline",pipe,rw)).concat(panel(p,rich,"Safety",safety,w));
+    } else body=panel(p,rich,"Active profile",active,w).concat(panel(p,rich,"Update pipeline",pipe,w),panel(p,rich,"Safety",safety,w));
+  } else if(pg===4){
+    const tw=Math.max(12,Math.floor((w-3*gap)/4));
+    const tile=(label,val,tok)=>panel(p,rich,label,[S(p,tok,val)],tw);
+    const tiles=joinH(p,gap,tile("↓ Now",fmtB(M.down)+"/s","down"),tile("↑ Now",fmtB(M.up)+"/s","up"),tile("↓ Total","1.84 GB","down"),tile("↑ Total","236 MB","up"));
+    const chH=Math.max(3,Math.min(7,Math.floor((bodyH-tiles.length-6)/2)));
+    body=tiles.concat(panel(p,rich,"Download",areaChart(p,M.downs,w-4,chH,"down"),w),panel(p,rich,"Upload",areaChart(p,M.ups,w-4,chH,"up"),w));
+  } else if(pg===5){
+    const linesL=LOGS.map(l=>S(p,"faint","09:42:18 ")+S(p,l[1],"["+l[0].toUpperCase().padEnd(7)+"] ")+S(p,l[0]==="error"?"err":l[0]==="warning"?"warn":"fg",l[2]));
+    body=panel(p,rich,"Mihomo logs",linesL,w);
+  } else if(pg===6){
+    const kernel=[kv(p,"State",S(p,"ok","Running")),kv(p,"Version","v1.19.34"),kv(p,"PID","48213"),kv(p,"Controller","127.0.0.1:9090"),kv(p,"Binary","~/.local/share/termihomo/run/mihomo"),kv(p,"SHA-256",S(p,"ok","verified · pinned"))];
+    const actions=[S(p,"acc","i ")+S(p,"fg","Install / reinstall")+S(p,"dim","   固定版本 + SHA-256"),S(p,"acc","a ")+S(p,"fg","Start")+S(p,"dim","   独立进程，退出 TUI 不中断"),S(p,"acc","x ")+S(p,"fg","Stop"),S(p,"acc","R ")+S(p,"fg","Restart")];
+    if(w>=88){
+      const lw=Math.floor(w*55/100), rw=w-lw-2;
+      body=joinH(p,gap,panel(p,rich,"Kernel",kernel,lw),panel(p,rich,"Actions",actions,rw));
+    } else body=panel(p,rich,"Kernel",kernel,w).concat(panel(p,rich,"Actions",actions,w));
+  } else if(pg===7){
+    const rowsR=RULES.map((r,i)=>(i===0?S(p,"acc","› "):"  ")+S(p,"info",r[0].padEnd(15))+S(p,"fg",r[1].padEnd(22))+S(p,"dim","→ ")+S(p,"acc",r[2]));
+    body=panel(p,rich,"Rules",rowsR,w);
+  } else {
+    const rowsC=CONNS.map((c,i)=>(i===M.cursor%CONNS.length?S(p,"acc","› "):"  ")+S(p,i===M.cursor%CONNS.length?"acc":"fg",fit(c[0],26))+S(p,"dim",fit(c[1],20))+S(p,"down","↓"+c[2].padStart(8))+S(p,"up","  ↑"+c[3]));
+    if(w>=96){
+      const lw=Math.floor(w*55/100), rw=w-lw-2, c=CONNS[M.cursor%CONNS.length];
+      const detail=[kv(p,"Host",S(p,"acc",c[0])),kv(p,"Chain",c[1]),kv(p,"Download",S(p,"down",c[2])),kv(p,"Upload",S(p,"up",c[3])),kv(p,"Rule","GEOSITE(geolocation-!cn)"),"",S(p,"dim","x 关闭此连接")];
+      body=joinH(p,gap,panel(p,rich,"Connections",rowsC,lw),panel(p,rich,"Detail",detail,rw));
+    } else body=panel(p,rich,"Connections",rowsC,w);
+  }
+  if(pg===0) {
+    const preview=(key,label)=>rich
+      ?S(p,"bg0"," "+key+" ","acc")+S(p,"fg"," "+label+" ","sel")
+      :"["+S(p,"acc",key)+" "+label+"]";
+    const modes=[["b","规则"],["M","全局"],["D","直连"],["U","TUN 关"]];
+    const nodes=[["A","全量测速"],["n","策略组"]];
+    body=panel(p,rich,"代理模式与节点",[
+      S(p,"acc","规则"),
+      modes.map(([key,label])=>preview(key,label)).join(" "),
+      nodes.map(([key,label])=>preview(key,label)).join(" ")
+    ],w).concat(body);
+  }
+  body=clamp(body,bodyH);
+  rows=rows.concat(body.map(l=>'<span class="row">'+l+"</span>"));
+  const button=([key,label,tok="acc"])=>rich
+    ?S(p,"bg0"," "+key+" ",tok)+S(p,"fg"," "+label+" ","sel")
+    :"["+S(p,tok,key)+" "+label+"]";
+  const actions=[
+    [["x","停止","err"],["R","重启"]],
+    [["/","搜索"],["s","排序"],["t","测速"],["A","全量测速"],["n","使用节点"],["↵","详情"]],
+    [["/","搜索"],["↵","打开"]],
+    [["a","添加订阅"],["i","导入 YAML"],["u","更新"]],
+    [],
+    [["L","级别"],["p","暂停"],["c","清空"]],
+    [["i","安装"],["a","启动","ok"],["x","停止","err"],["R","重启"]],
+    [["/","搜索"],["↵","详情"]],
+    [["/","搜索"],["↵","详情"],["x","关闭连接","err"]]
+  ];
+  rows.push('<span class="row">'+actions[pg].map(button).join(" ")+"</span>");
+  rows.push('<span class="row">'+[["r","刷新"],["T","主题"],["?","帮助"],["q","退出"]].map(button).join(" ")+"</span>");
+  const hints=S(p,"dim","h / l 切页  ·  j / k 移动  ·  gg / G");
+  const rates=S(p,"up","↑ "+fmtB(M.up)+"/s")+"  "+S(p,"down","↓ "+fmtB(M.down)+"/s")+"  "+S(p,"ok","LIVE");
+  let st=hints+" ".repeat(Math.max(1,w-W(hints)-W(rates)))+rates;
+  if(rich) st='<span style="background:'+p.bg1+'">'+fit(st,w)+"</span>";
+  rows.push('<span class="row">'+st+"</span>");
+  scr.innerHTML=rows.join("");
+}
+
+/* ================= static component demos ================= */
+function demos(){
+  const p=PAL.dark, rich=true;
+  document.getElementById("demo-panel").innerHTML=
+    panel(p,rich,"Kernel",[kv(p,"State",S(p,"ok","Running")),kv(p,"Version","v1.19.34"),kv(p,"Uptime","1h10m17s")],46).join("\n");
+  document.getElementById("demo-chips").innerHTML=[
+    chip(p,"Running","ok")+" "+chip(p,"Starting","warn")+" "+chip(p,"Error","err")+" "+chip(p,"rule","info"),
+    chip(p,"◐ Colorful","up")+" "+chip(p,"⏱ 1h10m","dim")+" "+chip(p,"127.0.0.1:7890","faint"),
+    S(p,"ok","● ")+S(p,"fg","HK-01")+"   "+S(p,"warn","● ")+S(p,"fg","US-02")+"   "+S(p,"err","● ")+S(p,"fg","DE-01")+"   "+S(p,"faint","● DIRECT")
+  ].join("\n");
+  document.getElementById("demo-latency").innerHTML=[42,126,189,301,0].map(d=>
+    S(p,"fg",String(d).padStart(4)+" ms  ")+latencyBar(p,d,18)
+  ).join("\n");
+  const dv=Array.from({length:44},(_,i)=>Math.max(0,50+42*Math.sin(i/4)+Math.random()*22));
+  document.getElementById("demo-charts").innerHTML=
+    S(p,"dim","spark  ")+sparkline(p,dv,44,"down")+"\n\n"+
+    areaChart(p,dv,44,4,"down").join("\n")+"\n"+
+    areaChart(p,dv.map(v=>v*0.22),44,3,"up").join("\n");
+  const fw=52;
+  document.getElementById("demo-form").innerHTML=panel(p,rich,"Subscription URL",[
+    S(p,"dim","粘贴或输入订阅地址，保存前自动校验"),"",
+    S(p,"acc","› ")+S(p,"fg","https://example.com/sub?token=abc123")+S(p,"acc","▏"),"",
+    S(p,"dim","Enter save  ·  Esc cancel  ·  Ctrl+V paste")
+  ],fw).join("\n").replace("▏</span>",'<span class="cursor-blink">▏</span></span>');
+  document.getElementById("demo-confirm").innerHTML=
+    panel(p,rich,"Replace active profile?",[S(p,"fg","当前档案将被替换，旧档案保留备份"),"",S(p,"acc","y ")+S(p,"dim","确认")+"   "+S(p,"acc","n ")+S(p,"dim","取消")],44).join("\n")
+    +"\n\n"+panel(p,rich,"Display too small",[S(p,"warn","⚠ 终端尺寸不足"),"最小显示尺寸 "+S(p,"acc","80 × 24"),"当前尺寸 "+S(p,"err","72 × 20")],40).join("\n");
+  /* anatomy */
+  const aw=72;
+  const brand=S(p,"bg0"," ◈ TERMIHOMO ","acc")+" "+S(p,"faint","v1.19.34");
+  let t1=brand+" ".repeat(aw-W(brand)-W(chip(p,"Running","ok"))-W(chip(p,"◐ Colorful","up"))-2)+chip(p,"Running","ok")+" "+chip(p,"◐ Colorful","up");
+  t1='<span style="background:'+p.bg1+'">'+fit(t1,aw)+"</span>";
+  const tabsA=PAGES.slice(0,5).map((pg,i)=>i===0?S(p,"bg0"," "+pg.g+" 1 "+pg.name+" ","acc"):S(p,"dim"," "+pg.g+" "+(i+1)+" "+pg.name+" ")).join(" ");
+  const anat=[
+    S(p,"faint","┄ 顶栏 topbar ┄")+"",
+    t1,
+    '<span style="background:'+p.bg0+'">'+fit(tabsA+"  "+S(p,"faint","…"),aw)+"</span>",
+    S(p,"bd","─".repeat(aw)),
+    S(p,"faint","┄ 正文 body (H−4) ┄"),
+    ...panel(p,rich,"Kernel",[kv(p,"State",S(p,"ok","Running")),S(p,"faint","…")],34).map(l=>l),
+    S(p,"faint","┄ 状态栏 statusbar ┄"),
+    '<span style="background:'+p.bg1+'">'+fit(S(p,"acc","r")+S(p,"dim"," refresh")+" ".repeat(24)+S(p,"up","↑ 182 KB/s")+"  "+S(p,"down","↓ 2.4 MB/s")+"  "+S(p,"ok","LIVE"),aw)+"</span>"
+  ];
+  document.getElementById("demo-anatomy").innerHTML=anat.join("\n");
+}
+
+/* ================= swatches / pages / nav ================= */
+function swatches(){
+  for(const th of ["dark","light"]){
+    const el=document.getElementById("sw-"+th);
+    el.innerHTML=ORDER.map(tok=>{
+      const hex=PAL[th][tok];
+      return '<div class="sw" data-hex="'+hex+'"><div class="chip" style="background:'+hex+'"></div><div class="inf"><div class="tok">'+tok+'</div><div class="hex">'+hex+'</div><div class="role">'+ROLES[tok]+"</div></div></div>";
+    }).join("");
+  }
+  document.querySelectorAll(".sw").forEach(el=>el.addEventListener("click",()=>{
+    const hex=el.dataset.hex;
+    (navigator.clipboard?navigator.clipboard.writeText(hex):Promise.reject()).then(()=>toast("已复制 "+hex)).catch(()=>toast(hex));
+  }));
+}
+function pageGrid(){
+  document.getElementById("page-grid").innerHTML=PAGES.map((pg,i)=>
+    '<div class="page-card" data-i="'+i+'"><span class="n">'+(i+1)+' / 9</span><span class="g">'+pg.g+'</span><h4>'+pg.name+' · '+pg.zh+'</h4><p>'+pg.desc+"</p></div>"
+  ).join("");
+  document.querySelectorAll(".page-card").forEach(el=>el.addEventListener("click",()=>{
+    M.page=+el.dataset.i; M.cursor=0; render();
+    document.getElementById("screen-sec").scrollIntoView({behavior:"smooth"});
+  }));
+}
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),1600);
+}
+
+/* ================= controls ================= */
+function seg(id,key){
+  document.querySelectorAll("#"+id+" button").forEach(b=>b.addEventListener("click",()=>{
+    M[key]=b.dataset.v;
+    document.querySelectorAll("#"+id+" button").forEach(x=>x.classList.toggle("on",x===b));
+    render();
+  }));
+}
+seg("seg-theme","theme"); seg("seg-visual","visual");
+document.getElementById("r-width").addEventListener("input",e=>{M.width=+e.target.value;render();});
+document.getElementById("r-height").addEventListener("input",e=>{M.height=+e.target.value;render();});
+document.getElementById("btn-reset").addEventListener("click",()=>{
+  Object.assign(M,{theme:"dark",visual:"colorful",width:120,height:30,page:0,cursor:0});
+  document.getElementById("r-width").value=120; document.getElementById("r-height").value=30;
+  document.querySelectorAll("#seg-theme button").forEach(b=>b.classList.toggle("on",b.dataset.v==="dark"));
+  document.querySelectorAll("#seg-visual button").forEach(b=>b.classList.toggle("on",b.dataset.v==="colorful"));
+  render(); toast("视图已重置");
+});
+document.getElementById("screen").addEventListener("click",e=>{
+  const el=e.target.closest("[data-act]");
+  if(!el) return;
+  if(el.dataset.act==="visual"){
+    M.visual=M.visual==="colorful"?"minimal":"colorful";
+    document.querySelectorAll("#seg-visual button").forEach(b=>b.classList.toggle("on",b.dataset.v===M.visual));
+    render();
+  } else if(el.dataset.act==="tab"){ M.page=+el.dataset.i; M.cursor=0; render(); }
+});
+document.getElementById("screen").addEventListener("wheel",e=>{
+  if(M.page===1||M.page===8){ M.cursor=Math.max(0,M.cursor+(e.deltaY>0?1:-1)); render(); e.preventDefault(); }
+},{passive:false});
+
+/* ================= live tick ================= */
+setInterval(()=>{
+  M.uptime++;
+  M.down=Math.max(2e5, M.down+(Math.random()-0.48)*7e5);
+  M.up=Math.max(2e4, M.up+(Math.random()-0.48)*6e4);
+  M.downs.push(M.down); M.downs.shift();
+  M.ups.push(M.up); M.ups.shift();
+  render();
+},1000);
+
+/* ================= reveal & nav state ================= */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target);}}),{threshold:.12});
+document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
+const secIo=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(e.isIntersecting){
+      document.querySelectorAll("#navlinks a").forEach(a=>a.classList.toggle("on",a.getAttribute("href")==="#"+e.target.id));
+    }
+  });
+},{rootMargin:"-30% 0px -60% 0px"});
+document.querySelectorAll("section[id]").forEach(s=>secIo.observe(s));
+
+swatches(); pageGrid(); demos(); render();
+</script>
+</body>
+</html>

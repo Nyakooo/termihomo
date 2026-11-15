@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -38,6 +39,7 @@ Commands:
   proxy list          List proxies and policy groups
   proxy select GROUP OPTION  Select an option in a Selector group
   proxy test NAME [URL]      Measure a proxy's delay
+  rules [--json]      List rules in evaluation order
   logs [-f]           Show or follow Mihomo logs
   config check        Validate the managed configuration
   config backup       Back up the generated configuration
@@ -61,6 +63,7 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
   proxy list                  列出节点和策略组
   proxy select GROUP OPTION   在 Selector 策略组中选择选项
   proxy test NAME [URL]        测试节点延迟
+  rules [--json]              按匹配顺序列出规则
   logs [-f]                   查看或跟踪日志
   config check                校验托管配置
   config backup               备份生成的配置
@@ -68,24 +71,33 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
   help                        显示帮助
 `
 
-func Run(args []string, stdout, stderr io.Writer) int {
-	return RunWithInput(args, strings.NewReader(""), stdout, stderr)
-}
-
 func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	originalArgs := args
 	lang := i18n.FromEnvironment()
+	if _, explicit := i18n.Parse(os.Getenv("TERMIHOMO_LANG")); !explicit {
+		if paths, err := platform.ResolvePaths(); err == nil {
+			lang = i18n.Saved(paths.Config)
+		}
+	}
 	if len(args) > 0 && args[0] == "--lang" {
+		var requested i18n.Language
 		var ok bool
 		if len(args) >= 2 {
-			lang, ok = i18n.Parse(args[1])
+			requested, ok = i18n.Parse(args[1])
 		}
 		if !ok {
-			fmt.Fprintln(stderr, i18n.FromEnvironment().Text("use --lang en or --lang zh-CN"))
+			fmt.Fprintln(stderr, lang.Text("use --lang en or --lang zh-CN"))
 			return 2
 		}
+		lang = requested
 		args = args[2:]
 	}
 
+	if len(args) == 0 {
+		if handled, code := bridgeTerminal(originalArgs, stdin, stdout, stderr, lang); handled {
+			return code
+		}
+	}
 	if len(args) == 0 && isTerminal(stdin) && isTerminal(stdout) {
 		paths, err := platform.ResolvePaths()
 		if err == nil {
@@ -127,6 +139,15 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 }
 
 func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n.Language) int {
+	var paths platform.Paths
+	if len(args) == 4 && args[0] == "--boot-start" {
+		paths = platform.Paths{Config: args[1], Data: args[2], Logs: args[3]}
+		if !filepath.IsAbs(paths.Config) || !filepath.IsAbs(paths.Data) || !filepath.IsAbs(paths.Logs) {
+			fmt.Fprintln(stderr, lang.Text("Startup directories must be absolute paths"))
+			return 2
+		}
+		args = []string{"start"}
+	}
 	confirmed := len(args) >= 2 && args[len(args)-1] == "--yes"
 	if confirmed {
 		args = args[:len(args)-1]
@@ -138,10 +159,13 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		return 2
 	}
 
-	paths, err := platform.ResolvePaths()
-	if err != nil {
-		fmt.Fprintln(stderr, lang.Error(err))
-		return 1
+	var err error
+	if paths.Config == "" {
+		paths, err = platform.ResolvePaths()
+		if err != nil {
+			fmt.Fprintln(stderr, lang.Error(err))
+			return 1
+		}
 	}
 	manager := core.Manager{Paths: paths}
 	needsConfirmation := mayConfirm
@@ -154,7 +178,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		needsConfirmation = info.Source != ""
 	}
 	if needsConfirmation && !confirmed {
-		if !isTerminal(stdin) {
+		if !isTerminal(stdin) && !isMSYSTerminal(stdin) {
 			fmt.Fprintln(stderr, lang.Text("confirmation required; use --yes for non-interactive execution"))
 			return 2
 		}
@@ -194,6 +218,18 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		err = runProfile(ctx, manager, args[1:], stdin, stdout, lang)
 	case "proxy":
 		err = runProxy(ctx, manager, args[1:], stdout)
+	case "rules":
+		var rules []core.Rule
+		rules, err = manager.Rules(ctx)
+		if err == nil {
+			if len(args) == 2 {
+				err = json.NewEncoder(stdout).Encode(rules)
+			} else {
+				for _, rule := range rules {
+					fmt.Fprintf(stdout, "%d\t%q\t%q\t%q\n", rule.Index, rule.Type, rule.Payload, rule.Proxy)
+				}
+			}
+		}
 	case "status":
 		var status core.Status
 		status, err = manager.Status(ctx)
@@ -225,6 +261,8 @@ func validManagedCommand(args []string) bool {
 	case "install", "start", "stop", "restart":
 		return len(args) == 1
 	case "status":
+		return len(args) == 1 || (len(args) == 2 && args[1] == "--json")
+	case "rules":
 		return len(args) == 1 || (len(args) == 2 && args[1] == "--json")
 	case "logs":
 		return len(args) == 1 || (len(args) == 2 && args[1] == "-f")
@@ -291,7 +329,7 @@ func runProxy(ctx context.Context, manager core.Manager, args []string, stdout i
 	case "select":
 		return manager.Select(ctx, args[1], args[2])
 	case "test":
-		target := "https://www.gstatic.com/generate_204"
+		target := ""
 		if len(args) == 3 {
 			target = args[2]
 		}

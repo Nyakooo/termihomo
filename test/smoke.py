@@ -1,11 +1,11 @@
-"""Exercise a built Termihomo binary and the official Mihomo release on Linux."""
+"""Exercise a built Termihomo binary and the official Mihomo release on the host operating system."""
 
-import fcntl
 import http.server
 import json
+import ipaddress
+import socket
 import os
 from pathlib import Path
-import pty
 import re
 import select
 import signal
@@ -13,11 +13,15 @@ import struct
 import subprocess
 import sys
 import tempfile
-import termios
 import threading
 import time
 import urllib.error
 import urllib.request
+
+if os.name != "nt":
+    import fcntl
+    import pty
+    import termios
 
 
 def profile(group):
@@ -41,6 +45,8 @@ class LocalServer(http.server.BaseHTTPRequestHandler):
         if self.path == "/delay":
             time.sleep(2.2)
         self.send_response(200)
+        if self.path.startswith("/sub?"):
+            self.send_header("Subscription-Userinfo", "upload=1024; download=2048; total=10240; expire=2051222400")
         self.end_headers()
 
     def do_GET(self):
@@ -83,14 +89,23 @@ def smoke(binary, directory, base):
         assert output == b"proxy-ok"
 
     assert status()["state"] == "NotInstalled"
+    command("init")
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    overrides = directory / "config" / "termihomo" / "overrides.yaml"
+    overrides.write_text(f"mixed-port: {port}\n")
     command("install")
     assert status()["state"] == "Stopped"
     token = "termihomo-smoke-secret"
     command("profile", "add", "-", input=f"{base}/sub?token={token}")
     command("config", "check")
     try:
+        paused_pid = cold_proxy_controller(binary, env, status) if os.name != "nt" else None
         command("start")
         running = status()
+        assert paused_pid is None or running["pid"] == paused_pid, running
+        assert running["proxy"] == f"127.0.0.1:{port}", running
         assert running["state"] == "Running", running
         assert json.loads(command("--lang", "zh-CN", "status", "--json").stdout) == running
         assert "运行中" in command("--lang", "zh-CN", "status").stdout
@@ -103,7 +118,12 @@ def smoke(binary, directory, base):
         except urllib.error.HTTPError as error:
             assert error.code == 401
         assert command("stop", ok=False).returncode == 2
-        terminal_smoke(binary, env, running, status, request, command)
+        if os.name != "nt":
+            running = terminal_smoke(binary, env, running, status, request, command, base)
+        else:
+            command("proxy", "select", "Pick", "DIRECT")
+            request(running)
+        verify_service_probe(directory, base, running, request)
 
         LocalServer.subscription = b"broken: [\n"
         invalid = command("profile", "update", "--yes", ok=False)
@@ -112,7 +132,7 @@ def smoke(binary, directory, base):
 
         running = reject_reload(directory, command, status, request, running)
 
-        if os.geteuid() != 0:
+        if os.name != "nt" and os.geteuid() != 0:
             # Prevent only the final profile record write. The managed
             # runtime file remains writable and the candidate reload succeeds.
             config_dir = directory / "config" / "termihomo"
@@ -134,18 +154,25 @@ def smoke(binary, directory, base):
         command("proxy", "select", "Next", "DIRECT")
         request(running)
         assert " ms" in command("proxy", "test", "DIRECT", f"{base}/delay").stdout
-        assert Path(command("config", "backup").stdout.strip()).stat().st_mode & 0o777 == 0o600
+        backup = Path(command("config", "backup").stdout.strip()).stat()
+        if os.name != "nt":
+            assert backup.st_mode & 0o777 == 0o600
         assert token not in command("logs").stdout
 
         command("restart", "--yes")
         restarted = status()
         assert restarted["state"] == "Running" and restarted["pid"] != running["pid"], restarted
-        os.kill(restarted["pid"], signal.SIGSTOP)
-        try:
-            assert status()["state"] == "Degraded"
-        finally:
-            os.kill(restarted["pid"], signal.SIGCONT)
-        os.kill(restarted["pid"], signal.SIGKILL)
+        assert '"Next"\tSelector\t"DIRECT"' in command("proxy", "list").stdout
+        request(restarted)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/PID", str(restarted["pid"])], check=True)
+        else:
+            os.kill(restarted["pid"], signal.SIGSTOP)
+            try:
+                assert status()["state"] == "Degraded"
+            finally:
+                os.kill(restarted["pid"], signal.SIGCONT)
+            os.kill(restarted["pid"], signal.SIGKILL)
         deadline = time.monotonic() + 5
         while status()["state"] != "Failed":
             assert time.monotonic() < deadline, "abnormal exit not detected"
@@ -153,6 +180,34 @@ def smoke(binary, directory, base):
     finally:
         command("stop", "--yes")
     assert status()["state"] == "Stopped"
+
+
+def verify_service_probe(directory, base, running, request):
+    instance = json.loads((directory / "data" / "termihomo" / "instance.json").read_text())
+    secret = instance["Secret"]
+    proxy = instance["ServiceProbe"]
+    assert proxy.startswith("127.0.0.1:") and proxy != running["proxy"]
+    controller = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    for node in ("REJECT", "DIRECT"):
+        address = f"http://{running['controller']}/proxies/__termihomo_service_probe"
+        call = urllib.request.Request(address, json.dumps({"name": node}).encode(), method="PUT",
+                                      headers={"Authorization": "Bearer " + secret, "Content-Type": "application/json"})
+        with controller.open(call, timeout=5):
+            pass
+        probe = subprocess.run(
+            ["curl", "-fsS", "--noproxy", "", "--proxy-user", "termihomo:" + secret,
+             "-x", "http://" + proxy, base + "/echo"], capture_output=True, timeout=5,
+        )
+        if node == "DIRECT":
+            assert probe.returncode == 0 and probe.stdout == b"proxy-ok"
+        else:
+            assert probe.returncode != 0
+        request(running)
+    unauthenticated = subprocess.run(
+        ["curl", "-sS", "--noproxy", "", "-o", os.devnull, "-w", "%{http_code}",
+         "-x", "http://" + proxy, base + "/echo"], capture_output=True, timeout=5,
+    )
+    assert unauthenticated.stdout == b"407"
 
 
 def reject_reload(directory, command, status, request, running):
@@ -199,7 +254,40 @@ def reject_reload(directory, command, status, request, running):
     return restored
 
 
-def terminal_smoke(binary, env, running, status, request, command):
+def cold_proxy_controller(binary, env, status):
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 27, 122, 0, 0))
+    process = subprocess.Popen(
+        [binary], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if select.select([master], [], [], 0.1)[0]:
+                os.read(master, 65536)
+            current = status()
+            if current["state"] == "Paused":
+                assert "proxy" not in current, current
+                # Drain the UI until it has completed its controller bootstrap.
+                while time.monotonic() < deadline:
+                    os.write(master, b"q")
+                    try:
+                        assert process.wait(timeout=0.25) == 0
+                        return current["pid"]
+                    except subprocess.TimeoutExpired:
+                        if select.select([master], [], [], 0)[0]:
+                            os.read(master, 65536)
+                break
+        raise AssertionError("TUI did not initialize the proxy controller with the listener off")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        os.close(slave)
+        os.close(master)
+
+
+def terminal_smoke(binary, env, running, status, request, command, base):
     master, slave = pty.openpty()
     original = termios.tcgetattr(slave)
     process = None
@@ -229,49 +317,110 @@ def terminal_smoke(binary, env, running, status, request, command):
     def key(data):
         os.write(master, data)
 
+    def click(column, row):
+        key(f"\x1b[<0;{column};{row}M\x1b[<0;{column};{row}m".encode())
+
     try:
-        resize(100, 27)
+        resize(122, 27)
         process = launch()
         expect("Running")
-        expect("total")
+        key(b"m")
+        expect(rb"Running +global")
+        key(b"2")
+        expect("Current exit")
+        key(b"1d")
+        expect(rb"Running +direct|Current exit .*DIRECT")
+        # Probe the real mixed listener through an active private IPv4 interface.
+        interfaces = json.loads(subprocess.check_output(["ip", "-j", "-4", "addr", "show", "up"]))
+        private = [ipaddress.ip_network(block) for block in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
+        addresses = [
+            addr["local"] for iface in interfaces if "BROADCAST" in iface["flags"]
+            for addr in iface.get("addr_info", [])
+            if any(ipaddress.ip_address(addr["local"]) in network for network in private)
+        ]
+        if addresses:
+            lan_state = dict(running, proxy=f"{addresses[0]}:{running['proxy'].rsplit(':', 1)[1]}")
+            key(b"w")
+            expect("Allow devices on local subnets")
+            key(b"y")
+            expect(rb"\[w on\]|n\]")
+            request(lan_state)
+            key(b"w")
+            expect("complete")
+            try:
+                with socket.create_connection((addresses[0], int(lan_state["proxy"].rsplit(":", 1)[1])), timeout=1):
+                    raise AssertionError("LAN listener remained open after disabling")
+            except OSError:
+                pass
+        key(b"b")
+        expect(rb"Running +rule|Rule fallback exit")
         assert status()["pid"] == running["pid"]
         key(b"2")
-        expect("DIRECT")
-        key(b"3")
-        expect("Pick")
-        key(b"j\r")  # Pick follows the built-in GLOBAL group.
-        expect("Enter select")
-        key(b"j\r")  # DIRECT follows REJECT in the fixture.
+        expect("REJECT")
+        click(50, 7)  # Focus the second card, DIRECT.
+        assert '"Pick"\tSelector\t"REJECT"' in command("proxy", "list").stdout
+        key(b"\r")
         deadline = time.monotonic() + 12
         while '"Pick"\tSelector\t"DIRECT"' not in command("proxy", "list").stdout:
             assert time.monotonic() < deadline, "terminal did not select DIRECT"
             time.sleep(0.1)
-        key(b"6")
+        key(b"5[")
         expect("Mihomo logs")
         request(running)
         expect("Pick[DIRECT]")
-        key(b"5")
-        expect(rb"total .*?(?:[1-9][0-9]*\.[0-9]|0\.[1-9]) (?:B|KiB|MiB)")
+        key(b"4")
+        expect("Requests")
+        expect("Destination")
         resize(37, 10)
         process.send_signal(signal.SIGWINCH)
         key(b"1")
-        expect("Overview")
+        expect("Terminal too small")
         key(b"q")
         assert process.wait(timeout=5) == 0
         assert termios.tcgetattr(slave) == original
         assert status()["pid"] == running["pid"]
         request(running)
+        resize(122, 27)
         process = launch("--lang", "zh-CN")
-        expect("总览")
+        expect("仪表盘")
         expect("运行中")
-        key(b"4")
-        expect("添加订阅")
-        key(b"a")
-        expect("订阅地址（已隐藏")
-        key(b"\x1b")
-        expect("退出")
+        key(b"3")
+        expect("编辑")
+        key(b"e")
+        expect("编辑配置")
+        expect("取消")
+        click(43, 19)  # Cancel in the centered form.
+        key(b"1")
+        expect("停止")
+        click(60, 6)  # Stop from the Overview status card.
+        expect("确认操作")
+        key(b"y")
+        expect("[a ▶ 启动]")
+        paused = status()
+        assert paused["state"] == "Paused" and paused["pid"] == running["pid"] and "proxy" not in paused, paused
+        host, port = running["proxy"].rsplit(":", 1)
+        try:
+            with socket.create_connection((host, int(port)), timeout=1):
+                raise AssertionError("proxy listener remained open while paused")
+        except OSError:
+            pass
+        key(b"2")
+        expect("DIRECT")
+        command("proxy", "select", "Pick", "REJECT")
+        assert '"Pick"\tSelector\t"REJECT"' in command("proxy", "list").stdout
+        assert " ms" in command("proxy", "test", "DIRECT", base + "/delay").stdout
+        key(b"1")
+        expect("[a ▶ 启动]")
+        click(60, 6)  # Start from the same status card.
+        expect("[a ■ 停止]")
+        restarted = status()
+        assert restarted["state"] == "Running" and restarted["pid"] == running["pid"]
+        assert '"Pick"\tSelector\t"REJECT"' in command("proxy", "list").stdout
         key(b"q")
         assert process.wait(timeout=5) == 0
+        command("proxy", "select", "Pick", "DIRECT")
+        request(restarted)
+        return restarted
     finally:
         if process is not None and process.poll() is None:
             process.kill()

@@ -1,44 +1,110 @@
-name: Go CI
+name: Go CI and Release
 
 on:
-  push:
   pull_request:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  verify:
-    name: Linux ${{ matrix.arch }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version: '1.26.x'
-          check-latest: true
-          cache: false
+          go-version-file: go.mod
       - run: go test ./...
-      - run: go vet ./...
-      - name: Build and smoke test
+
+  build:
+    if: github.ref_type == 'tag'
+    name: Validate and package ${{ matrix.os }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, runner: macos-15-intel}
+          - {os: darwin, arch: arm64, runner: macos-15}
+          - {os: windows, arch: amd64, runner: windows-2025}
+          - {os: windows, arch: arm64, runner: windows-11-arm}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET_OS: ${{ matrix.os }}
+      TARGET_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+      - name: Test, build, and package
         run: |
-          test "$(go env GOARCH)" = "${{ matrix.arch }}"
-          go build -o "$RUNNER_TEMP/termihomo" ./cmd/termihomo
-          smoke_home="$(mktemp -d)"
-          unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME
-          "$RUNNER_TEMP/termihomo" --help
-          "$RUNNER_TEMP/termihomo" version
-          env HOME="$smoke_home" "$RUNNER_TEMP/termihomo" init
-          test -d "$smoke_home/.config/termihomo"
-          test -d "$smoke_home/.local/share/termihomo"
-          test -d "$smoke_home/.local/state/termihomo/logs"
-      - name: Run Mihomo and terminal acceptance
-        run: python3 test/smoke.py "$RUNNER_TEMP/termihomo"
+          test "$(go env GOOS)" = "$TARGET_OS"
+          test "$(go env GOARCH)" = "$TARGET_ARCH"
+          go test ./...
+          mkdir -p build dist
+          asset="termihomo-${TARGET_OS}-${TARGET_ARCH}"
+          binary=termihomo
+          if [[ "$TARGET_OS" == windows ]]; then
+            binary="${asset}.exe"
+          fi
+          go build -trimpath -ldflags="-s -w -X github.com/Nyakooo/termihomo/internal/version.Value=$GITHUB_REF_NAME" \
+            -o "build/$binary" ./cmd/termihomo
+          python test/smoke.py "build/$binary"
+          if [[ "$TARGET_OS" == windows ]]; then
+            mv "build/$binary" dist/
+          else
+            tar -czf "dist/${asset}.tar.gz" -C build "$binary"
+          fi
+      - name: Build Android ARM64
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          export GOOS=android GOARCH=arm64 CGO_ENABLED=1
+          export CC="${ANDROID_NDK_LATEST_HOME:?}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/Nyakooo/termihomo/internal/version.Value=$GITHUB_REF_NAME -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
+            -o build/termihomo-android-arm64 ./cmd/termihomo
+          tar -czf dist/termihomo-android-arm64.tar.gz -C build termihomo-android-arm64
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/termihomo-*
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish GitHub Release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum termihomo-* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes termihomo-* SHA256SUMS

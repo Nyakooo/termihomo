@@ -3,6 +3,7 @@ package i18n
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -28,15 +29,7 @@ func FromEnvironment() Language {
 	if lang, ok := Parse(os.Getenv("TERMIHOMO_LANG")); ok {
 		return lang
 	}
-	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
-		if locale := os.Getenv(name); locale != "" {
-			primary := strings.SplitN(strings.ToLower(locale), ".", 2)[0]
-			if primary == "zh" || strings.HasPrefix(primary, "zh_") || strings.HasPrefix(primary, "zh-") {
-				return Chinese
-			}
-			break
-		}
-	}
+
 	return English
 }
 
@@ -84,4 +77,32 @@ func (l Language) Error(err error) string {
 	default:
 		return err.Error()
 	}
+}
+
+// Saved reads the language shared by the interface and command-line tools.
+func Saved(dir string) Language {
+	body, err := os.ReadFile(filepath.Join(dir, "language"))
+	if err == nil {
+		if language, ok := Parse(strings.TrimSpace(string(body))); ok {
+			return language
+		}
+	}
+	return English
+}
+
+func Save(dir string, language Language) error {
+	file, err := os.CreateTemp(dir, ".language-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	_, err = file.WriteString(string(language) + "\n")
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(file.Name(), filepath.Join(dir, "language"))
 }

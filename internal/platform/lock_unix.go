@@ -1,3 +1,5 @@
+//go:build linux || darwin
+
 package platform
 
 import (
@@ -9,13 +11,8 @@ import (
 	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
-// ErrInstanceBusy means another command is modifying the managed instance.
-var ErrInstanceBusy = i18n.Message("managed instance is busy")
-
-// LockInstance takes an exclusive lock in the private data directory. Closing
-// the returned file releases the lock; the lock file must remain in place.
-func (p Paths) LockInstance() (*os.File, error) {
-	f, err := os.OpenFile(filepath.Join(p.Data, "instance.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
+func (p Paths) lock(name string) (*os.File, error) {
+	f, err := os.OpenFile(filepath.Join(p.Data, name), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
 	if err != nil {
 		return nil, err
 	}
