@@ -28,4 +28,4 @@ Termihomo 支持 Linux、macOS 和 Windows 的 AMD64 和 ARM64。TUI 和 CLI 使
 
 ## 验证
 
-运行 `go test ./...` 和 `go vet ./...`。构建后可用 `python3 test/smoke.py ./bin/termihomo` 在隔离目录验证真实代理请求、配置回滚和后台进程。固定内核版本的原始实测见 [Mihomo 集成验证记录](TECHNICAL_RESEARCH.md)。
+运行 `go test ./...` 和 `go vet ./...`。构建后可用 `TERMIHOMO_SMOKE_BINARY=../bin/termihomo go test -count=1 ./test` 在隔离目录验证真实代理请求、配置回滚和后台进程。固定内核版本的原始实测见 [Mihomo 集成验证记录](TECHNICAL_RESEARCH.md)。

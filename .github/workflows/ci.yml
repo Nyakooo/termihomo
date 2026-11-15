@@ -49,10 +49,6 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v7.1.0
-        with:
-          python-version: '3.13'
-          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
       - name: Test, build, and package
         run: |
           test "$(go env GOOS)" = "$TARGET_OS"
@@ -66,7 +62,7 @@ jobs:
           fi
           go build -trimpath -ldflags="-s -w -X github.com/Nyakooo/termihomo/internal/version.Value=$GITHUB_REF_NAME" \
             -o "build/$binary" ./cmd/termihomo
-          python test/smoke.py "build/$binary"
+          TERMIHOMO_SMOKE_BINARY="../build/$binary" go test -count=1 -run '^TestReleaseBinary$' ./test
           if [[ "$TARGET_OS" == windows ]]; then
             mv "build/$binary" dist/
           else

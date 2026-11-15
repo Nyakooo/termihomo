@@ -91,7 +91,7 @@ keys:
   search: z
 ```
 
-`go test ./...` 和 `go vet ./...` 检查 Go 代码。`python3 test/smoke.py ./bin/termihomo` 会在临时目录下载校验官方内核，并通过本机 HTTP 服务和终端验证代理、配置回滚及后台运行。测试需要联网和 `curl`。
+`go test ./...` 和 `go vet ./...` 检查 Go 代码。构建后，在仓库根目录运行 `TERMIHOMO_SMOKE_BINARY=../bin/termihomo go test -count=1 ./test`，在隔离目录下载并校验官方内核，验证真实代理请求、配置回滚和后台进程。发布测试需要联网。
 
 - [技术架构](docs/ARCHITECTURE.md)
 - [Mihomo 集成验证记录](docs/TECHNICAL_RESEARCH.md)
