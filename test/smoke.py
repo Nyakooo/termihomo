@@ -73,7 +73,7 @@ def smoke(binary, directory, base):
     def command(*args, ok=True, input=None):
         result = subprocess.run(
             [binary, *args], input=input, stdin=subprocess.DEVNULL if input is None else None,
-            capture_output=True, text=True, env=env, timeout=160, check=False,
+            capture_output=True, encoding="utf-8", env=env, timeout=160, check=False,
         )
         if ok and result.returncode:
             raise AssertionError(f"{args[:2]} exited {result.returncode}: {result.stderr}")
@@ -290,9 +290,25 @@ def cold_proxy_controller(binary, env, status):
 
 def terminal_smoke(binary, env, running, status, request, command, base):
     master, slave = pty.openpty()
-    original = termios.tcgetattr(slave)
     process = None
     seen = bytearray()
+
+    def input_mode():
+        iflag, oflag, cflag, lflag, _, _, controls = termios.tcgetattr(slave)
+        return (
+            iflag & (termios.IGNBRK | termios.BRKINT | termios.PARMRK | termios.ISTRIP |
+                     termios.INLCR | termios.IGNCR | termios.ICRNL | termios.IXON),
+            oflag & termios.OPOST,
+            cflag & (termios.CSIZE | termios.PARENB),
+            lflag & (termios.ECHO | termios.ECHONL | termios.ICANON | termios.ISIG | termios.IEXTEN),
+            controls[termios.VMIN],
+            controls[termios.VTIME],
+        )
+
+    def wait_for_exit(expected_mode):
+        assert process.wait(timeout=5) == 0
+        actual = input_mode()
+        assert actual == expected_mode, f"terminal mode after exit: {actual!r}, expected {expected_mode!r}"
 
     def resize(cols, rows):
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
@@ -341,6 +357,7 @@ def terminal_smoke(binary, env, running, status, request, command, base):
 
     try:
         resize(122, 27)
+        original = input_mode()
         process = launch()
         expect("Running")
         key(b"m")
@@ -395,11 +412,11 @@ def terminal_smoke(binary, env, running, status, request, command, base):
         key(b"1")
         expect("Terminal too small")
         key(b"q")
-        assert process.wait(timeout=5) == 0
-        assert termios.tcgetattr(slave) == original
+        wait_for_exit(original)
         assert status()["pid"] == running["pid"]
         request(running)
         resize(122, 27)
+        original = input_mode()
         process = launch("--lang", "zh-CN")
         expect("仪表盘")
         expect("运行中")
@@ -436,7 +453,7 @@ def terminal_smoke(binary, env, running, status, request, command, base):
         assert restarted["state"] == "Running" and restarted["pid"] == running["pid"]
         assert '"Pick"\tSelector\t"REJECT"' in command("proxy", "list").stdout
         key(b"q")
-        assert process.wait(timeout=5) == 0
+        wait_for_exit(original)
         command("proxy", "select", "Pick", "DIRECT")
         request(restarted)
         return restarted
