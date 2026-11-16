@@ -1,0 +1,87 @@
+# 配置与数据目录
+
+本文说明 Termihomo 在本机保存哪些数据、各平台默认目录在哪里，以及哪些文件适合手动调整。
+
+## 目录布局
+
+Termihomo 将配置、运行数据和日志分开存放。
+
+| 平台 | 配置目录 | 数据目录 | 日志目录 |
+| --- | --- | --- | --- |
+| Linux | `~/.config/termihomo` | `~/.local/share/termihomo` | `~/.local/state/termihomo/logs` |
+| macOS | `~/Library/Application Support/termihomo/config` | `~/Library/Application Support/termihomo/data` | `~/Library/Application Support/termihomo/state/logs` |
+| Windows | `%LOCALAPPDATA%\termihomo\config` | `%LOCALAPPDATA%\termihomo\data` | `%LOCALAPPDATA%\termihomo\state\logs` |
+
+Linux 支持 XDG Base Directory 环境变量。设置为绝对路径时，Termihomo 会在对应目录下创建 `termihomo` 子目录：
+
+- `XDG_CONFIG_HOME`
+- `XDG_DATA_HOME`
+- `XDG_STATE_HOME`
+
+## 重要文件
+
+### 配置目录
+
+| 路径 | 用途 |
+| --- | --- |
+| `profile.json` | 当前活动配置档案及其元数据 |
+| `profiles/` | 已保存的配置档案库 |
+| `overrides.yaml` | Termihomo 管理的配置覆盖项 |
+| `settings.yaml` | TUI 刷新间隔和快捷键设置 |
+
+### 数据目录
+
+| 路径 | 用途 |
+| --- | --- |
+| `instance.json` | 托管内核的运行状态 |
+| `mihomo/config.yaml` | 根据活动档案和应用设置生成的运行配置 |
+| `cores/` | 已安装的 Mihomo 内核版本 |
+
+### 日志目录
+
+| 路径 | 用途 |
+| --- | --- |
+| `termihomo.log` | Termihomo 应用日志 |
+
+Mihomo 自身的运行日志可通过 TUI 的 Logs 页面或 `termihomo logs` 查看。
+
+## 配置如何生效
+
+Termihomo 将配置档案和应用覆盖项组合成托管配置：
+
+1. 导入本地 Mihomo YAML，或下载订阅配置。
+2. 保存活动档案。
+3. 将 Termihomo 的设置覆盖到对应配置项。
+4. 调用 Mihomo 校验生成结果。
+5. 校验通过后再写入并启动或重新加载。
+
+因此，`mihomo/config.yaml` 是生成的运行文件，不建议直接编辑。重新启动、重新加载或修改设置时，它可能被重新生成。
+
+需要调整通用选项、DNS 或网络设置时，优先使用 TUI 的设置页面。配置档案本身应通过 Profile 页面或 CLI 导入、更新和管理。
+
+## 代理默认值
+
+- 默认混合代理监听地址：`127.0.0.1:7890`
+- 默认不允许局域网访问。
+- 运行配置由 Termihomo 管理；不要同时用其他工具覆盖同一份托管配置。
+- 系统代理和 TUN 属于系统网络设置，启用时请留意权限与网络影响。
+
+## 安全与备份
+
+配置目录会以当前用户可访问的私有目录方式创建。不要随意修改目录权限，也不要将配置目录直接提交到公开仓库。
+
+特别注意：
+
+- 订阅 URL 可能包含账户令牌或其他访问凭据。
+- 配置文件可能包含节点密码、密钥、域名和个人网络信息。
+- 分享日志前先检查是否包含订阅地址、服务器地址或其他敏感信息。
+- `termihomo config backup` 备份的是生成的运行配置，不等同于完整备份。需要完整迁移时，应在停止内核后，安全备份配置目录和必要的数据目录。
+
+## 安装目录
+
+安装程序默认将 Termihomo 可执行文件安装到：
+
+- Linux / macOS：`~/.local/bin/termihomo`
+- Windows：`%LOCALAPPDATA%\Programs\Termihomo\termihomo.exe`
+
+设置 `TERMIHOMO_INSTALL_DIR` 可覆盖安装程序的默认目标目录。它只影响程序安装位置，不改变应用配置、数据和日志目录。
