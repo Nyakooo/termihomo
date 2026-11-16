@@ -191,7 +191,12 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 			m.filter, m.cursor = "", 0
 		}
 	case m.settings.key("search"):
-		if m.page == proxies || m.page == connectionsPage || m.page == dnsPage {
+		switch m.page {
+		case connectionsPage:
+			m.filter, m.cursor = "", 0
+			m.connectionSelection = nil
+			m.openForm("Filter", "")
+		case proxies, dnsPage:
 			m.openForm("Filter", m.filter)
 		}
 	case m.settings.key("sort"):
