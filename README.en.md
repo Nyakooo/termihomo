@@ -61,6 +61,8 @@ The TUI is organized into focused sections:
 
 Press <code>?</code> inside the application to view the current key bindings. The layout adapts to terminal size; a window of at least 80×24 is recommended.
 
+In desktop sessions with a tray host, enable or disable the system tray under **Tools → General → System tray**. It is off by default and shows the current node, routing mode, TUN status, and latest available node latency.
+
 ## Supported platforms
 
 | Platform | Architectures | Installation |

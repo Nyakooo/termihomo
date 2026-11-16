@@ -41,7 +41,10 @@ func proxyRevision(values []string) string {
 func (m Manager) SetSystemProxy(ctx context.Context, enable bool, externalRevision string) error {
 	return m.withLock(func() error {
 		if !enable {
-			return m.disableSystemProxy(ctx, externalRevision)
+			if err := m.disableSystemProxy(ctx, externalRevision); err != nil {
+				return err
+			}
+			return m.saveNetworkPreference(systemProxyPreference, false)
 		}
 		state, err := m.runningInstance()
 		if err != nil {
@@ -50,7 +53,13 @@ func (m Manager) SetSystemProxy(ctx context.Context, enable bool, externalRevisi
 		if state.Paused {
 			return i18n.Message("Start Mihomo to apply changes")
 		}
-		return m.enableSystemProxy(ctx, state.Proxy, false)
+		if err := m.enableSystemProxy(ctx, state.Proxy, false); err != nil {
+			return err
+		}
+		if m.SystemProxy(ctx).Owned {
+			return m.saveNetworkPreference(systemProxyPreference, true)
+		}
+		return nil
 	})
 }
 

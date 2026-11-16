@@ -55,6 +55,8 @@ func (m *model) networkPageView(height int) []string {
 		proxyStatus = "off"
 		if proxy.Enabled {
 			proxyStatus = "on"
+		} else if m.snapshot.status.ResumeSystemProxy {
+			proxyStatus = "paused"
 		}
 		if proxy.ExclusionsErr == nil {
 			exclusions = fmt.Sprintf(m.lang.Text("%d entries"), len(proxy.Exclusions))

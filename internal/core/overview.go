@@ -77,11 +77,14 @@ func (m Manager) SetTUN(ctx context.Context, enable bool) error {
 		if err != nil {
 			return err
 		}
-		return m.setTUN(ctx, state, enable)
+		if err := m.setTUN(ctx, &state, enable); err != nil {
+			return err
+		}
+		return m.saveNetworkPreference(tunPreference, enable)
 	})
 }
 
-func (m Manager) setTUN(ctx context.Context, state instance, enable bool) error {
+func (m Manager) setTUN(ctx context.Context, state *instance, enable bool) error {
 	if enable && state.Paused {
 		return i18n.Message("Start Mihomo to apply changes")
 	}
@@ -106,7 +109,12 @@ func (m Manager) setTUN(ctx context.Context, state instance, enable bool) error 
 			return i18n.Message("The termihomo network interface is already in use")
 		}
 		if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) {
-			state, err = m.authorizeTUN(ctx, state, current)
+			authorized, err := m.authorizeTUN(ctx, *state, current)
+			if authorized.PID != 0 {
+				authorized.ResumeTUN = state.ResumeTUN
+				authorized.ResumeSystemProxy = state.ResumeSystemProxy
+				*state = authorized
+			}
 			if err != nil {
 				return err
 			}

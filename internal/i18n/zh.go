@@ -1,6 +1,8 @@
 package i18n
 
 var zh = map[string]string{
+	"System tray":  "系统托盘",
+	"Current node": "当前节点",
 	"Previous Mihomo process is running, but runtime settings could not be restored: %s": "Mihomo 已恢复运行，但无法恢复运行设置：%s",
 	"Restart failed; restored the previous Mihomo configuration: %s":                     "重启失败，已恢复 Mihomo 原配置：%s",
 	"Could not restart the previous Mihomo configuration: %s":                            "无法使用原配置恢复 Mihomo：%s",
@@ -420,6 +422,7 @@ var zh = map[string]string{
 	"Turn off the system proxy configured outside Termihomo":         "系统代理由其他程序设置，是否关闭",
 	"System proxy changed; check its current settings and try again": "系统代理已变化，请检查后重试",
 	"TUN unavailable": "TUN 不可用",
+	"TUN paused":      "TUN 已暂停",
 	"TUN inactive":    "TUN 未生效",
 	"Mihomo needs CAP_NET_ADMIN to enable TUN": "Mihomo 进程缺少 CAP_NET_ADMIN，无法启用 TUN",
 	"Mihomo did not apply the selected node":   "Mihomo 未应用所选节点",

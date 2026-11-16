@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Nyakooo/termihomo/internal/core"
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -137,6 +138,38 @@ func TestViewEmitsColorWhenCapable(t *testing.T) {
 	m.style = styler{mode: 0, p: darkPalette}
 	if strings.Contains(m.View().Content, "\x1b[") {
 		t.Fatal("expected no ANSI styling when color is disabled")
+	}
+}
+
+func TestNativeConsoleColorProfileWithoutTERM(t *testing.T) {
+	t.Setenv("TERM", "")
+	if value, present := os.LookupEnv("NO_COLOR"); present {
+		t.Cleanup(func() { os.Setenv("NO_COLOR", value) })
+		if err := os.Unsetenv("NO_COLOR"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		profile colorprofile.Profile
+		mode    int
+	}{
+		{colorprofile.TrueColor, 3},
+		{colorprofile.ANSI256, 2},
+		{colorprofile.ANSI, 1},
+		{colorprofile.NoTTY, 0},
+	} {
+		style := newStyler()
+		style.setColorProfile(tc.profile)
+		if style.mode != tc.mode {
+			t.Errorf("profile %v: mode = %d, want %d", tc.profile, style.mode, tc.mode)
+		}
+	}
+
+	t.Setenv("NO_COLOR", "")
+	style := newStyler()
+	style.setColorProfile(colorprofile.TrueColor)
+	if style.mode != 0 {
+		t.Fatal("NO_COLOR should disable colors")
 	}
 }
 
@@ -880,5 +913,27 @@ func TestLogBatchFeedsDNSWhileLogsPaused(t *testing.T) {
 	})
 	if len(m.logEntries) != 0 || len(m.visibleDNSRows()) != 1 {
 		t.Fatal("paused logs should still process DNS events in a batch")
+	}
+}
+
+func TestTraySummaryUsesSelectedNodeAndItsDelay(t *testing.T) {
+	m := richModel()
+	m.snapshot.status.State = "Running"
+	m.snapshot.overview = core.Overview{Mode: "global", TUN: true}
+	m.snapshot.proxies = []core.Proxy{
+		{Name: "GLOBAL", Type: "Selector", Now: "Hong Kong"},
+		{Name: "Hong Kong", Type: "Shadowsocks"},
+	}
+	m.delays = map[string]core.DelayResult{"Hong Kong": {Milliseconds: 42}}
+	summary := m.traySummary()
+	if summary[0] != "Current node · Hong Kong" || summary[1] != "Routing mode · global" ||
+		summary[2] != "TUN on" || summary[3] != "Latency · 42 ms" {
+		t.Fatalf("unexpected tray summary: %v", summary)
+	}
+
+	m.snapshot.status.State, m.snapshot.status.ResumeTUN, m.snapshot.overview.TUN = "Paused", true, false
+	summary = m.traySummary()
+	if summary[2] != "TUN paused" || summary[3] != "Latency · —" {
+		t.Fatalf("unexpected paused tray summary: %v", summary)
 	}
 }

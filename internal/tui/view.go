@@ -810,6 +810,8 @@ func (m *model) tunLabel() string {
 	switch {
 	case m.snapshot.overview.TUN:
 		return "TUN on"
+	case m.snapshot.status.ResumeTUN:
+		return "TUN paused"
 	case m.snapshot.overview.TUNConfigured:
 		return "TUN inactive"
 	case m.snapshot.overview.TUNUnavailable:
@@ -845,11 +847,15 @@ func (m *model) dashboardControls(top, leftWidth, rateWidth int) []string {
 			if !m.snapshot.systemProxy.Owned {
 				system = "External"
 			}
+		} else if m.snapshot.status.ResumeSystemProxy {
+			system = "paused"
 		}
 	}
 	switch m.tunLabel() {
 	case "TUN on":
 		tun = "on"
+	case "TUN paused":
+		tun = "paused"
 	case "TUN unavailable", "TUN inactive":
 		tun = "Unavailable"
 	}

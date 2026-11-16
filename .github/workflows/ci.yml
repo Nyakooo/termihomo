@@ -53,6 +53,9 @@ jobs:
         run: |
           test "$(go env GOOS)" = "$TARGET_OS"
           test "$(go env GOARCH)" = "$TARGET_ARCH"
+          if [[ "$TARGET_OS" == darwin ]]; then
+            export CGO_ENABLED=1
+          fi
           go test ./...
           mkdir -p build dist
           asset="termihomo-${TARGET_OS}-${TARGET_ARCH}"

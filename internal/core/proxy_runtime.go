@@ -13,6 +13,37 @@ import (
 	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
+const (
+	tunPreference         = "app.tun-enabled"
+	systemProxyPreference = "app.system-proxy-enabled"
+)
+
+func (m Manager) saveNetworkPreference(key string, enabled bool) error {
+	settings, err := m.readToolSettings()
+	if err != nil {
+		return err
+	}
+	if value, ok := settings[key].(bool); ok && value == enabled {
+		return nil
+	}
+	settings[key] = enabled
+	return m.writeToolSettings(settings)
+}
+
+func (m Manager) applyNetworkPreferences(state *instance) error {
+	settings, err := m.readToolSettings()
+	if err != nil {
+		return err
+	}
+	if enabled, ok := settings[tunPreference].(bool); ok {
+		state.ResumeTUN = enabled
+	}
+	if enabled, ok := settings[systemProxyPreference].(bool); ok {
+		state.ResumeSystemProxy = enabled
+	}
+	return nil
+}
+
 // EnsureProxyController makes the active configuration usable without opening
 // an inbound proxy listener.
 func (m Manager) EnsureProxyController(ctx context.Context) error {
@@ -29,10 +60,18 @@ func (m Manager) PauseProxy(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if !state.Paused {
+			overview, err := state.overview(ctx)
+			if err != nil {
+				return err
+			}
+			state.ResumeTUN = overview.TUNConfigured
+			owner, _ := m.proxyOwnership()
+			state.ResumeSystemProxy = len(owner.Applied) > 0 && m.SystemProxy(ctx).Owned
+		}
 		if err := m.setProxyPaused(ctx, state, true); err != nil {
 			return err
 		}
-		m.restoreSystemProxy()
 		return state.request(ctx, http.MethodDelete, "/connections", nil, nil)
 	})
 }
@@ -49,7 +88,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 	if err != nil {
 		return err
 	}
-	patch := func(ctx context.Context, suspend bool) error {
+	patch := func(ctx context.Context, target instance, suspend bool) error {
 		values := map[string]any{"mixed-port": port}
 		if suspend {
 			values["mixed-port"] = 0
@@ -61,14 +100,14 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 		if err != nil {
 			return err
 		}
-		if err := state.request(ctx, http.MethodPatch, "/configs", bytes.NewReader(body), nil); err != nil {
+		if err := target.request(ctx, http.MethodPatch, "/configs", bytes.NewReader(body), nil); err != nil {
 			return err
 		}
 		var config struct {
 			Mixed int `json:"mixed-port"`
 			TUN   struct{ Enable bool }
 		}
-		if err := state.request(ctx, http.MethodGet, "/configs", nil, &config); err != nil {
+		if err := target.request(ctx, http.MethodGet, "/configs", nil, &config); err != nil {
 			return err
 		}
 		if (suspend && (config.Mixed != 0 || config.TUN.Enable)) || (!suspend && config.Mixed != port) {
@@ -76,16 +115,53 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 		}
 		return nil
 	}
-	err = patch(ctx, paused)
+	next := state
+	next.Paused = paused
+	var proxyResumed bool
+	if !paused {
+		if err := m.applyNetworkPreferences(&next); err != nil {
+			return err
+		}
+	}
+	err = patch(ctx, state, paused)
 	if err == nil {
-		next := state
-		next.Paused = paused
+		if paused && state.ResumeSystemProxy {
+			err = m.disableSystemProxy(ctx, "")
+		} else if !paused {
+			proxyResumed, err = m.resumePausedNetwork(ctx, &next)
+			next.ResumeTUN, next.ResumeSystemProxy = false, false
+		}
+	}
+	if err == nil {
 		err = m.writeInstance(next)
 	}
 	if err != nil {
 		rollback, cancel := context.WithTimeout(context.WithoutCancel(ctx), 4*time.Second)
 		defer cancel()
-		return errors.Join(err, patch(rollback, state.Paused))
+		rollbackErr := patch(rollback, next, state.Paused)
+		if paused && rollbackErr == nil {
+			_, rollbackErr = m.resumePausedNetwork(rollback, &state)
+		} else if proxyResumed {
+			rollbackErr = errors.Join(rollbackErr, m.disableSystemProxy(rollback, ""))
+		}
+		if rollbackErr == nil && next.PID != state.PID {
+			next.Paused = state.Paused
+			next.ResumeTUN, next.ResumeSystemProxy = state.ResumeTUN, state.ResumeSystemProxy
+			rollbackErr = m.writeInstance(next)
+		}
+		return errors.Join(err, rollbackErr)
 	}
 	return nil
+}
+
+func (m Manager) resumePausedNetwork(ctx context.Context, state *instance) (bool, error) {
+	if state.ResumeTUN {
+		if err := m.setTUN(ctx, state, true); err != nil {
+			return false, err
+		}
+	}
+	if state.ResumeSystemProxy && !m.SystemProxy(ctx).Enabled {
+		return true, m.enableSystemProxy(ctx, state.Proxy, false)
+	}
+	return false, nil
 }

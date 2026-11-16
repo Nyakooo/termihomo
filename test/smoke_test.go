@@ -19,6 +19,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Nyakooo/termihomo/internal/core"
+	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
 type runtimeStatus struct {
@@ -122,6 +125,21 @@ func TestReleaseBinary(t *testing.T) {
 	}
 	if !strings.Contains(command("--lang", "zh-CN", "status"), "运行中") {
 		t.Fatal("Chinese status missing")
+	}
+	paths, err := platform.ResolvePaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := core.Manager{Paths: paths}
+	if err := manager.PauseProxy(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if paused := status(); paused.State != "Paused" || paused.PID != running.PID || paused.Proxy != "" {
+		t.Fatalf("dashboard pause changed the managed process: %+v", paused)
+	}
+	command("start")
+	if resumed := status(); resumed != running {
+		t.Fatalf("dashboard resume changed the managed process: %+v", resumed)
 	}
 	command("tun", "stop")
 	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{}}

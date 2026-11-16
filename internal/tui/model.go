@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Nyakooo/termihomo/internal/core"
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"github.com/Nyakooo/termihomo/internal/tray"
 )
 
 type page int
@@ -121,6 +122,7 @@ type formHistory struct {
 }
 
 type model struct {
+	tray                *tray.Controller
 	compactTerminal     bool
 	dnsFeed             dnsFeed
 	toolField           core.ToolField
@@ -211,7 +213,7 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	defer cancel()
 	testCtx, cancelTests := context.WithCancel(ctx)
 	defer cancelTests()
-	m := &model{testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
+	m := &model{tray: tray.New(ctx), testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
 	program := tea.NewProgram(m, tea.WithInput(input), tea.WithOutput(output), tea.WithContext(ctx))
 	m.send = program.Send
 	go reconnect(ctx, func() error {
@@ -231,6 +233,8 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	}, func() { enqueueLog(logStreamEvent{offline: true}) })
 	go forwardLogBatches(ctx, logEvents, program.Send)
 	_, err = program.Run()
+	cancel()
+	m.tray.Wait()
 	return err
 }
 
@@ -338,6 +342,11 @@ func (m *model) act(label string, run func() error) tea.Cmd {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.ColorProfileMsg:
+		// Native Windows consoles can support color without setting TERM.
+		if runtime.GOOS == "windows" {
+			m.style.setColorProfile(msg.Profile)
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		if m.logOffset > 0 {
@@ -358,6 +367,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dnsFeed.pending = nil
 		}
 		m.applySnapshot(msg)
+		m.updateTray()
 		checks := m.refreshServices(previous)
 		autoRun := msg.toolSettings["app.auto-run"] == "true"
 		if m.ctx != nil && !m.proxyControllerAttempted && !m.busy &&
@@ -366,7 +376,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.proxyControllerAttempted = true
 			return m, m.act(m.lang.Text("Load proxies"), func() error {
 				if autoRun {
-					return m.manager.Start(m.ctx)
+					return m.manager.StartDashboardProxy(m.ctx)
 				}
 				return m.manager.EnsureProxyController(m.ctx)
 			})
@@ -409,11 +419,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation == m.speedGeneration && m.speedNodes[msg.name] && msg.result != nil {
 			delete(m.speedNodes, msg.name)
 			m.mergeProxyDelays(map[string]core.DelayResult{msg.name: *msg.result})
+			m.updateTray()
 		}
 	case speedDone:
 		if msg.generation == m.speedGeneration && m.speedNodes != nil {
 			m.speedNodes = nil
 			m.mergeProxyDelays(msg.delays)
+			m.updateTray()
 			if !m.busy {
 				if msg.err != nil {
 					m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,8 +18,16 @@ type dnsQueryDone struct {
 	err      error
 }
 
-func (m *model) toolPage(height int) []string {
+func (m *model) generalToolFields() []core.ToolField {
 	fields := core.GeneralToolFields
+	if m.tray == nil && fields[len(fields)-1].Key == core.SystemTrayKey {
+		fields = fields[:len(fields)-1]
+	}
+	return fields
+}
+
+func (m *model) toolPage(height int) []string {
+	fields := m.generalToolFields()
 	entries := make([]string, 0, len(fields))
 	for _, field := range fields {
 		value := safe(m.snapshot.toolSettings[field.Key])
@@ -30,7 +39,7 @@ func (m *model) toolPage(height int) []string {
 			if field.Key == "mixed-port" {
 				value = fmt.Sprintf(m.lang.Text("%d (default)"), core.DefaultProxyPort)
 			}
-			if defaultValue := map[string]string{"app.auto-run": "false", "app.test-url": "https://www.gstatic.com/generate_204", "app.test-timeout": "3000", "app.close-connections": "false"}[field.Key]; defaultValue != "" {
+			if defaultValue := map[string]string{"app.auto-run": "false", core.SystemTrayKey: "false", "app.test-url": "https://www.gstatic.com/generate_204", "app.test-timeout": "3000", "app.close-connections": "false"}[field.Key]; defaultValue != "" {
 				value = defaultValue
 			}
 		}
@@ -51,7 +60,7 @@ func (m *model) toolPage(height int) []string {
 }
 
 func (m *model) editToolField() {
-	fields := core.GeneralToolFields
+	fields := m.generalToolFields()
 	field := fields[min(m.cursor, len(fields)-1)]
 	m.toolField = field
 	m.openForm(field.Label, m.snapshot.toolSettings[field.Key])
@@ -60,9 +69,18 @@ func (m *model) editToolField() {
 func (m *model) toolPageKey(key string) tea.Cmd {
 	switch key {
 	case "enter":
+		fields := m.generalToolFields()
+		field := fields[min(m.cursor, len(fields)-1)]
+		if field.Key == core.SystemTrayKey {
+			enabled := strconv.FormatBool(m.snapshot.toolSettings[field.Key] != "true")
+			return m.act(m.lang.Text(field.Label), func() error {
+				return m.manager.SetToolSetting(m.ctx, field.Key, enabled)
+			})
+		}
 		m.editToolField()
 	case "d":
-		field := core.GeneralToolFields[min(m.cursor, len(core.GeneralToolFields)-1)]
+		fields := m.generalToolFields()
+		field := fields[min(m.cursor, len(fields)-1)]
 		m.confirmLabel = m.lang.Text("Reset setting") + " · " + m.lang.Text(field.Label)
 		m.confirm = func() error { return m.manager.SetToolSetting(m.ctx, field.Key, "") }
 	case "ctrl+r":

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -50,6 +51,21 @@ func detectColorMode() int {
 		return 3
 	}
 	return 1
+}
+
+func (s *styler) setColorProfile(profile colorprofile.Profile) {
+	s.mode = 0
+	if _, disabled := os.LookupEnv("NO_COLOR"); disabled || os.Getenv("TERM") == "dumb" {
+		return
+	}
+	switch profile {
+	case colorprofile.TrueColor:
+		s.mode = 3
+	case colorprofile.ANSI256:
+		s.mode = 2
+	case colorprofile.ANSI:
+		s.mode = 1
+	}
 }
 
 func hexRGB(hex string) (r, g, b int) {

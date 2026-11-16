@@ -19,24 +19,28 @@ import (
 )
 
 type Status struct {
-	State      string    `json:"state"`
-	Installed  string    `json:"installed_version,omitempty"`
-	PID        int       `json:"pid,omitempty"`
-	Controller string    `json:"controller,omitempty"`
-	Proxy      string    `json:"proxy,omitempty"`
-	Started    time.Time `json:"started,omitempty,omitzero"`
+	State             string    `json:"state"`
+	Installed         string    `json:"installed_version,omitempty"`
+	PID               int       `json:"pid,omitempty"`
+	Controller        string    `json:"controller,omitempty"`
+	Proxy             string    `json:"proxy,omitempty"`
+	Started           time.Time `json:"started,omitempty,omitzero"`
+	ResumeTUN         bool      `json:"-"`
+	ResumeSystemProxy bool      `json:"-"`
 }
 
 type instance struct {
-	PID          int
-	Identity     string
-	Controller   string
-	ServiceProbe string
-	Proxy        string
-	Secret       string
-	Started      time.Time
-	Stopping     bool
-	Paused       bool
+	PID               int
+	Identity          string
+	Controller        string
+	ServiceProbe      string
+	Proxy             string
+	Secret            string
+	Started           time.Time
+	Stopping          bool
+	Paused            bool
+	ResumeTUN         bool `json:",omitempty"`
+	ResumeSystemProxy bool `json:",omitempty"`
 }
 
 func (m Manager) statePath() string { return filepath.Join(m.Paths.Data, "instance.json") }
@@ -114,17 +118,28 @@ func (m Manager) runtimeStatus(ctx context.Context) (Status, instance, []Rule, e
 		status.State = "Running"
 		if state.Paused {
 			status.State, status.Proxy = "Paused", ""
+			status.ResumeTUN, status.ResumeSystemProxy = state.ResumeTUN, state.ResumeSystemProxy
 		}
 	}
 	return status, state, rules, nil
 }
 
 func (m Manager) Start(ctx context.Context) error {
+	return m.startManaged(ctx, false)
+}
+
+func (m Manager) StartDashboardProxy(ctx context.Context) error {
+	return m.startManaged(ctx, true)
+}
+
+func (m Manager) startManaged(ctx context.Context, dashboard bool) error {
 	if err := m.Install(ctx); err != nil {
 		return err
 	}
 	return m.withLock(func() error {
+		resuming := false
 		if state, err := m.runningInstance(); err == nil {
+			resuming = state.Paused
 			var current struct{ Version string }
 			if err := state.request(ctx, http.MethodGet, "/version", nil, &current); err == nil &&
 				current.Version != "" && current.Version != Version {
@@ -136,7 +151,18 @@ func (m Manager) Start(ctx context.Context) error {
 				}
 			}
 		}
-		return m.start(ctx)
+		if err := m.start(ctx); err != nil || !dashboard || resuming {
+			return err
+		}
+		state, err := m.runningInstance()
+		if err != nil {
+			return err
+		}
+		if err := m.applyNetworkPreferences(&state); err != nil {
+			return err
+		}
+		_, err = m.resumePausedNetwork(ctx, &state)
+		return err
 	})
 }
 
@@ -262,7 +288,7 @@ func (m Manager) restoreRuntime(ctx context.Context, state instance, choices []P
 		lanErr = state.setLAN(ctx, true)
 	}
 	if !state.Paused && overview.TUNConfigured {
-		tunErr = m.setTUN(ctx, state, true)
+		tunErr = m.setTUN(ctx, &state, true)
 	}
 	return errors.Join(selectorErr, modeErr, lanErr, tunErr)
 }

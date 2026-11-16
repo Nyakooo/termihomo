@@ -20,6 +20,7 @@ import (
 )
 
 const startOnBootKey = "app.start-on-boot"
+const SystemTrayKey = "app.system-tray"
 
 type ToolField struct {
 	Key, Label, Type string
@@ -32,6 +33,12 @@ var GeneralToolFields = []ToolField{
 	{"app.close-connections", "Close connections on node change", "bool"},
 	{"app.test-url", "Test URL", "url"},
 	{"app.test-timeout", "Test timeout (ms)", "timeout"},
+}
+
+func init() {
+	if runtime.GOOS != "android" {
+		GeneralToolFields = append(GeneralToolFields, ToolField{SystemTrayKey, "System tray", "bool"})
+	}
 }
 
 var advancedToolFields = []ToolField{
@@ -180,12 +187,16 @@ func (m Manager) SetToolSetting(ctx context.Context, key, input string) error {
 				return err
 			}
 		}
-		data, err := yaml.Marshal(settings)
-		if err != nil {
-			return err
-		}
-		return atomicWrite(m.toolSettingsPath(), data)
+		return m.writeToolSettings(settings)
 	})
+}
+
+func (m Manager) writeToolSettings(settings map[string]any) error {
+	data, err := yaml.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	return atomicWrite(m.toolSettingsPath(), data)
 }
 
 func parseToolSetting(field ToolField, input string) (any, error) {

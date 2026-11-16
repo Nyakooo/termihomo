@@ -248,7 +248,11 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 				return nil
 			}
 			m.lifecycle = "Starting"
-			return m.act(m.lang.Text("Start Mihomo"), func() error { return m.manager.Start(m.ctx) })
+			start := m.manager.Start
+			if m.page == dashboard {
+				start = m.manager.StartDashboardProxy
+			}
+			return m.act(m.lang.Text("Start Mihomo"), func() error { return start(m.ctx) })
 		case "x":
 			if m.page == corePage {
 				m.confirmLabel, m.confirm = m.lang.Text("Stop Mihomo"), m.manager.Stop
@@ -598,7 +602,7 @@ func (m *model) scroll(delta int) {
 	case dnsPage:
 		n = len(m.visibleDNSRows())
 	case generalPage:
-		n = len(core.GeneralToolFields)
+		n = len(m.generalToolFields())
 	case networkPage:
 		n = networkRowCount
 		if m.showProxyExclusions {
