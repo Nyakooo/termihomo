@@ -73,8 +73,12 @@ Termihomo 使用分区式终端界面组织信息：
 
 ### Linux / macOS
 
+先用 `curl` 下载安装脚本，再交给 Shell 执行：
+
 ~~~sh
-installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && printf '%s\n' "$installer" | sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh
+sh /tmp/termihomo-install.sh
+rm -f /tmp/termihomo-install.sh
 ~~~
 
 Linux 和 macOS 默认安装到 <code>~/.local/bin</code>。如果 <code>~/.local/bin</code> 不在 <code>PATH</code> 中，可以加入当前 Shell 环境。
