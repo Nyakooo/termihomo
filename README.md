@@ -1,6 +1,10 @@
-# Termihomo
+<p align="center">
+  <img src="assets/termihomo-logo.jpg" alt="Termihomo logo" width="240" />
+</p>
 
-[English](README.en.md)
+<h1 align="center">Termihomo</h1>
+
+<p align="center"><a href="README.en.md">English</a></p>
 
 Termihomo 是 Mihomo 的终端管理工具。它提供 TUI 和可脚本化 CLI。退出 TUI 后，托管的 Mihomo 继续在后台代理。
 

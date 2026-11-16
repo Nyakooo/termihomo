@@ -1,6 +1,10 @@
-# Termihomo
+<p align="center">
+  <img src="assets/termihomo-logo.jpg" alt="Termihomo logo" width="240" />
+</p>
 
-[简体中文](README.md)
+<h1 align="center">Termihomo</h1>
+
+<p align="center"><a href="README.md">简体中文</a></p>
 
 Termihomo manages Mihomo from a terminal UI or a scriptable CLI. The managed Mihomo process keeps serving proxy traffic when you close the UI.
 
