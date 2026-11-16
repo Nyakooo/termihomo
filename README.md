@@ -76,7 +76,7 @@ Termihomo 使用分区式终端界面组织信息：
 先用 `curl` 下载安装脚本，再交给 Shell 执行：
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh &&
 sh /tmp/termihomo-install.sh
 rm -f /tmp/termihomo-install.sh
 ~~~
