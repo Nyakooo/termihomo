@@ -114,7 +114,7 @@ export PATH="$HOME/.local/bin:$PATH"
 termihomo
 ~~~
 
-首次运行时，Termihomo 会检查 Mihomo 内核；尚未安装时会下载并校验受支持的版本。
+首次使用前先安装 Mihomo 内核：执行 <code>termihomo install</code>，或进入 TUI 的 Core 页面选择 Install / reinstall。安装流程会下载并校验受支持的版本。
 
 建议按以下顺序完成初次配置：
 
