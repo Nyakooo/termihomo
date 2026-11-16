@@ -63,7 +63,7 @@ The Core Manager is the management boundary between the application and Mihomo. 
 
 Termihomo manages Mihomo as a separate background process:
 
-1. Check the local core version; download and verify it when necessary.
+1. Install the core with <code>termihomo install</code> or the Install / reinstall action on the TUI Core page. The installation flow downloads and verifies a supported build.
 2. Read the active profile and application overrides.
 3. Generate a managed configuration and ask Mihomo to validate it.
 4. Start Mihomo and use its local Controller API to inspect runtime state.
