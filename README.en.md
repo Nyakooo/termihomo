@@ -1,60 +1,202 @@
 <p align="center">
-  <img src="assets/termihomo-logo.svg" alt="Termihomo logo" width="240" />
+  <img src="assets/termihomo-logo.svg" alt="Termihomo" width="180" />
 </p>
 
 <h1 align="center">Termihomo</h1>
 
-<p align="center"><a href="README.md">简体中文</a> · <a href="https://github.com/Nyakooo/termihomo/releases">Downloads</a></p>
+<p align="center">
+  <strong>Manage Mihomo from your terminal.</strong><br />
+  A lightweight, cross-platform TUI and CLI for Mihomo.
+</p>
 
-Manage Mihomo from your terminal. Import subscriptions, switch nodes, test latency, and inspect active connections. On desktop, Mihomo can keep running after you close the UI.
+<p align="center">
+  <a href="README.md">简体中文</a> ·
+  <a href="https://github.com/Nyakooo/termihomo/releases">Releases</a> ·
+  <a href="docs/CLI.en.md">CLI reference</a> ·
+  <a href="docs/ARCHITECTURE.en.md">Architecture</a>
+</p>
 
-The dashboard and main interactions draw on [FlClash](https://github.com/chen08209/FlClash). Thanks to chen08209 and the FlClash contributors for the design, and to [MetaCubeX](https://github.com/MetaCubeX/mihomo/releases) for the proxy core.
+<p align="center">
+  <a href="https://github.com/Nyakooo/termihomo/actions/workflows/ci.yml"><img src="https://github.com/Nyakooo/termihomo/actions/workflows/ci.yml/badge.svg" alt="CI and Release" /></a>
+  <a href="https://github.com/Nyakooo/termihomo/releases"><img src="https://img.shields.io/github/v/release/Nyakooo/termihomo" alt="Latest Release" /></a>
+</p>
 
-## Install
+Termihomo brings day-to-day Mihomo management to the terminal. It combines the information layout of a desktop manager with the direct, lightweight, scriptable workflow of a command-line tool.
 
-| Platform | Architecture | Default install location |
-| --- | --- | --- |
-| Linux (kernel 5.3+) / macOS | AMD64, ARM64 | `~/.local/bin` |
-| Windows | AMD64, ARM64 | `%LOCALAPPDATA%\Programs\Termihomo` |
-| Termux (Android 8.0+) | ARM64 | `$PREFIX/bin` |
+It is <strong>not a proxy core</strong>. Network traffic is handled by <a href="https://github.com/MetaCubeX/mihomo">Mihomo</a>; Termihomo manages the core lifecycle, profiles and subscriptions, proxies and policy groups, connections, DNS, and system network settings.
 
-**Linux, macOS, Termux**
+## Design goals
 
-```sh
-installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && printf '%s\n' "$installer" | sh
-```
+- **Terminal first**: a focused terminal interface without a desktop GUI dependency.
+- **TUI + CLI**: interactive workflows and scriptable commands share the same management layer.
+- **Lightweight by design**: manage Mihomo instead of reimplementing its proxy engine.
+- **Cross-platform**: Linux, macOS, and Windows builds for AMD64 and ARM64.
+- **Controlled changes**: managed configuration is validated before it is applied, and sensitive operations can require confirmation.
 
-**Windows PowerShell**
+## Features
 
-```powershell
-& ([scriptblock]::Create((Invoke-RestMethod 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop)))
-```
-
-For a private repository, run `gh auth login` and use the command for your shell.
-
-```sh
-installer=$(gh api -H 'Accept: application/vnd.github.raw+json' repos/Nyakooo/termihomo/contents/install.sh) && printf '%s\n' "$installer" | sh
-```
-
-```powershell
-$script = gh api -H 'Accept: application/vnd.github.raw+json' repos/Nyakooo/termihomo/contents/install.ps1
-if ($LASTEXITCODE -ne 0) { throw 'Could not download install.ps1.' }
-& ([scriptblock]::Create(($script -join "`n")))
-```
-
-The installers verify `SHA256SUMS`. On Linux / macOS, run `export PATH="$HOME/.local/bin:$PATH"` if your shell cannot find the command. You can also download a binary from [Releases](https://github.com/Nyakooo/termihomo/releases).
-
-## Use
-
-| Command | Purpose |
+| Area | Capabilities |
 | --- | --- |
-| `termihomo` | Open the TUI and download Mihomo on first use |
-| `termihomo update` | Update the Termihomo executable |
-| `termihomo status` | Show the core and proxy status |
-| `termihomo start` | Start the background core |
-| `termihomo stop` | Stop the background core |
-| `termihomo reload` | Apply the active profile and saved settings in the current process. Port changes require a restart |
-| `termihomo restart` | Stop and start the core, interrupting active connections |
-| `termihomo tun start` / `termihomo tun stop` | Enable or disable TUN on the running core. System privileges are required to enable it |
+| Core lifecycle | Download and verify Mihomo, start, stop, restart, inspect status, run in the background |
+| Profiles | Import local YAML, add and refresh subscriptions, manage profile entries |
+| Proxies | Browse proxies, select options in Selector groups, test latency, inspect delay history |
+| Connections | Inspect active connections, process, destination, protocol, rule, outbound chain, and traffic |
+| Traffic and status | Live upload/download rates, totals, memory usage, and uptime |
+| DNS | DNS settings, query events, manual lookups, and results |
+| Network | System proxy, proxy exclusions, TUN, stack mode, and outbound interface |
+| Rules and logs | Inspect rules in evaluation order and follow Mihomo logs |
+| Daily workflow | Chinese and English UI, configuration validation and backup, application self-update |
 
-For private releases, set `GH_TOKEN` with repository read access before running `update`. The proxy defaults to `127.0.0.1:7890`. Termux provides a local proxy. Device-wide VPN requires an Android client.
+Availability of system proxy, startup integration, and TUN features varies by operating system and permissions.
+
+## Interface
+
+The TUI is organized into focused sections:
+
+- **Overview** — core status, live traffic, memory, active profile, policy groups, and connections.
+- **Proxies** — browse nodes and policy groups, select an option, and test latency.
+- **Profile** — import, edit, refresh, and manage subscription or local profiles.
+- **Connections** — inspect, filter, sort, and open connection details.
+- **Tools** — general and network settings, DNS, core details, logs, and language.
+
+Press <code>?</code> inside the application to view the current key bindings. The layout adapts to terminal size; a window of at least 80×24 is recommended.
+
+## Supported platforms
+
+| Platform | Architectures | Installation |
+| --- | --- | --- |
+| Linux (kernel 5.3+) | AMD64, ARM64 | Shell installer / Releases |
+| macOS | AMD64, ARM64 | Shell installer / Releases |
+| Windows | AMD64, ARM64 | PowerShell installer / Releases |
+
+## Installation
+
+### Linux / macOS
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh | sh
+~~~
+
+The default install directory is <code>~/.local/bin</code>. Add it to your shell's <code>PATH</code> if needed:
+
+~~~sh
+export PATH="$HOME/.local/bin:$PATH"
+~~~
+
+### Windows PowerShell
+
+~~~powershell
+& ([scriptblock]::Create((Invoke-RestMethod 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop)))
+~~~
+
+The default directory is <code>%LOCALAPPDATA%\Programs\Termihomo</code>. The installer adds it to the current user's <code>PATH</code>.
+
+### Custom installation directory
+
+Set <code>TERMIHOMO_INSTALL_DIR</code> before running the installer to override the default location.
+
+### Manual installation
+
+You can also download a build from <a href="https://github.com/Nyakooo/termihomo/releases">Releases</a>:
+
+1. Choose the asset for your operating system and CPU architecture.
+2. Download <code>SHA256SUMS</code> from the same release.
+3. Verify the downloaded file with a local SHA-256 utility.
+4. Extract or place the executable in a directory on your <code>PATH</code>.
+
+The installers download the matching release and verify its SHA-256 checksum before installation.
+
+## Quick start
+
+Launch the interactive interface:
+
+~~~sh
+termihomo
+~~~
+
+On first launch, Termihomo checks for the Mihomo core and downloads and verifies a supported build if it is not already installed.
+
+A typical first-run workflow:
+
+1. Open **Profile** and add a subscription URL or import a local Mihomo YAML file.
+2. Wait for the profile to pass validation.
+3. Start Mihomo from **Core** or the Overview page.
+4. Open **Proxies** and choose a node or policy-group option.
+5. Enable the system proxy or TUN from **Network** if needed.
+
+The default local mixed-proxy address is <code>127.0.0.1:7890</code>. LAN access is disabled by default. Enabling TUN or changing system network settings may require additional system privileges.
+
+## CLI
+
+Termihomo also provides a scriptable command-line interface:
+
+~~~sh
+termihomo help
+termihomo status
+termihomo profile list
+termihomo proxy list
+termihomo logs -f
+~~~
+
+Common commands:
+
+| Command | Description |
+| --- | --- |
+| <code>termihomo</code> | Launch the interactive TUI |
+| <code>termihomo install</code> | Download and verify the Mihomo core |
+| <code>termihomo update</code> | Update the Termihomo executable |
+| <code>termihomo start</code> / <code>stop</code> | Start or stop the background core |
+| <code>termihomo restart</code> / <code>reload</code> | Restart the core or reload its configuration |
+| <code>termihomo status --json</code> | Print machine-readable status |
+| <code>termihomo profile add URL</code> | Add a subscription |
+| <code>termihomo profile import FILE</code> | Import a local YAML profile |
+| <code>termihomo proxy list</code> | List proxies and policy groups |
+| <code>termihomo proxy test NAME</code> | Test proxy latency |
+| <code>termihomo rules --json</code> | Print rules as JSON |
+| <code>termihomo config check</code> | Validate the managed configuration |
+
+See the <a href="docs/CLI.en.md">CLI reference</a> for arguments, confirmation behavior, and examples.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [CLI reference](docs/CLI.en.md) | Commands, arguments, examples, and scripting |
+| [Configuration and data](docs/CONFIGURATION.en.md) | Config files, data directories, logs, and environment variables |
+| [Architecture](docs/ARCHITECTURE.en.md) | Module boundaries, runtime flow, and design principles |
+| [Contributing](CONTRIBUTING.md) | Local development, tests, and contribution guidelines |
+
+## Build from source
+
+Use the Go toolchain version specified in <code>go.mod</code>.
+
+~~~sh
+git clone https://github.com/Nyakooo/termihomo.git
+cd termihomo
+go test ./...
+go build -trimpath -o bin/termihomo ./cmd/termihomo
+~~~
+
+Run the resulting binary:
+
+~~~sh
+./bin/termihomo
+~~~
+
+On Windows, use <code>termihomo.exe</code> as the output filename. See the <a href="docs/ARCHITECTURE.en.md">architecture guide</a> for module details.
+
+## Acknowledgements
+
+- <a href="https://github.com/MetaCubeX/mihomo">MetaCubeX / Mihomo</a> — proxy core and controller API.
+- <a href="https://github.com/chen08209/FlClash">chen08209 / FlClash</a> — design reference for interaction layout and information organization.
+- <a href="https://github.com/charmbracelet">Charmbracelet</a> — terminal UI components.
+
+Termihomo is an independent management tool and is not affiliated with or officially endorsed by these projects.
+
+## Project status
+
+Termihomo is under active development. Features, commands, and configuration formats may change between versions. Check the release notes before upgrading. Bug reports and improvement suggestions are welcome through GitHub Issues.
+
+---
+
+<p align="center">Built for the terminal.</p>
