@@ -61,6 +61,9 @@ func (m *model) View() tea.View {
 	}
 	s := m.style
 	sideWidth := m.sidebarWidth()
+	if m.page == connectionsPage {
+		m.requestCache()
+	}
 	content := *m
 	content.width -= sideWidth
 	content.hits = nil
@@ -69,7 +72,7 @@ func (m *model) View() tea.View {
 	body := content.body(bodyHeight)
 	actions := content.actionBar()
 	requestMenu := m.page == connectionsPage && m.requests.menu != ""
-	modal := m.confirm != nil || m.form != "" || m.help || m.detail || m.services.dialog || requestMenu
+	modal := m.modalOpen()
 	if modal {
 		content.hits = nil
 		if requestMenu {
@@ -452,7 +455,11 @@ func (m *model) actionBar() string {
 	if m.filter != "" {
 		actions = append(actions, control{"esc", "Back"})
 	}
-	global := []control{{k("refresh"), "Refresh"}, {k("help"), "Help"}, {k("quit"), "Quit"}}
+	quitLabel := "Quit"
+	if m.modalOpen() || (m.page == networkPage && m.showProxyExclusions) {
+		quitLabel = "Back"
+	}
+	global := []control{{k("refresh"), "Refresh"}, {k("help"), "Help"}, {k("quit"), quitLabel}}
 	available := m.width
 	all := append(actions, global...)
 	for _, item := range all {
@@ -578,7 +585,7 @@ func (m *model) overlayModal(body []string, height int) []string {
 				submit = "Save"
 			}
 			buttons = []control{{"esc", "Cancel"}, {"enter", submit}}
-		} else if m.page == networkPage {
+		} else if m.formPage == networkPage {
 			splitButtons = true
 			hint := "Enter one domain, IP address, or network range"
 			switch m.form {
@@ -596,14 +603,14 @@ func (m *model) overlayModal(body []string, height int) []string {
 		} else {
 			if m.form == "DNS query" {
 				lines = append(lines, m.style.dim(m.lang.Text("Enter a domain and optional record type")))
-			} else if m.page == generalPage && m.form != "Filter" {
-				if m.toolField.Key == "mixed-port" {
+			} else if m.formPage == generalPage && m.form != "Filter" {
+				if m.formField.Key == "mixed-port" {
 					lines = append(lines, m.style.dim(fmt.Sprintf(m.lang.Text("Leave empty to use port %d"), core.DefaultProxyPort)))
 				} else {
 					lines = append(lines, m.style.dim(m.lang.Text("Empty uses profile defaults")))
 				}
-				if m.toolField.Type != "text" && m.toolField.Key != "mixed-port" {
-					lines = append(lines, m.style.dim(m.lang.Text("Value format")+" "+m.lang.Text(m.toolField.Type)))
+				if m.formField.Type != "text" && m.formField.Key != "mixed-port" {
+					lines = append(lines, m.style.dim(m.lang.Text("Value format")+" "+m.lang.Text(m.formField.Type)))
 				}
 			}
 			inputRow = len(lines)
@@ -770,7 +777,8 @@ func (m *model) helpLines() []string {
 		row(m.lang.Text("Profile"), m.lang.Text("a add · i import · u update")),
 		row(m.lang.Text("Core"), m.lang.Text("i install · a start · x stop · Ctrl+R restart")),
 		row(m.lang.Text("Logs"), k("log-level")+m.lang.Text(" level · p pause · c clear")),
-		row(k("quit"), m.lang.Text("Quit and keep Mihomo running")),
+		row(k("quit"), m.lang.Text("Close current layer or quit at the main screen")),
+		row("Alt+"+k("quit"), m.lang.Text("Type the quit key in a form")),
 	}
 	return lines
 }

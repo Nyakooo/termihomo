@@ -16,8 +16,18 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	return m.handleKey(msg.String(), msg.Key().Text)
 }
 
+func (m *model) modalOpen() bool {
+	return m.confirm != nil || m.form != "" || m.services.dialog || m.help || m.detail ||
+		(m.page == connectionsPage && m.requests.menu != "")
+}
+
 func (m *model) handleKey(key, value string) tea.Cmd {
-	if key == "ctrl+c" || (key == m.settings.key("quit") && m.form == "" && m.confirm == nil && !m.help) {
+	quit := m.settings.key("quit")
+	exclusions := m.page == networkPage && m.showProxyExclusions
+	if key == quit && (m.modalOpen() || exclusions) {
+		key = "esc"
+	}
+	if key == "ctrl+c" || key == quit {
 		if m.busy {
 			m.feedback = m.lang.Text("Wait for the current operation to finish")
 			return nil
@@ -47,16 +57,11 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 		return nil
 	}
 	if m.form != "" {
-		return m.formKey(key, value)
-	}
-	if m.detail {
-		if key == "esc" || key == "h" || key == "enter" || (key == "x" && m.page == connectionsPage) {
-			m.detail = false
-			if key == "x" && m.page == connectionsPage {
-				return m.closeConnection()
-			}
+		if key == "alt+"+quit && len([]rune(quit)) == 1 {
+			m.addInput(quit)
+			return nil
 		}
-		return nil
+		return m.formKey(key, value)
 	}
 	if m.services.dialog {
 		switch key {
@@ -84,6 +89,18 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 	if m.help {
 		m.help = false
 		return nil
+	}
+	if m.detail {
+		if key == "esc" || key == "h" || key == "enter" || (key == "x" && m.page == connectionsPage) {
+			m.detail = false
+			if key == "x" && m.page == connectionsPage {
+				return m.closeConnection()
+			}
+		}
+		return nil
+	}
+	if key == "esc" && exclusions {
+		return m.proxyExclusionsKey(key)
 	}
 	if m.page == proxies {
 		switch key {
@@ -499,6 +516,11 @@ func (m *model) addInput(value string) {
 
 func (m *model) openForm(name, value string) {
 	m.form = name
+	m.formID++
+	m.formPage, m.formField = m.page, core.ToolField{}
+	if (m.page == generalPage || m.page == networkPage) && name == m.toolField.Label {
+		m.formField = m.toolField
+	}
 	m.input = []rune(value)
 	m.inputCursor = len(m.input)
 	m.formError = ""
@@ -889,9 +911,10 @@ func (m *model) formKey(key, value string) tea.Cmd {
 			m.inputCursor = start
 		}
 	case "ctrl+v":
+		formID := m.formID
 		return func() tea.Msg {
 			text, err := readClipboard()
-			return clipboardMsg{text: text, err: err}
+			return clipboardMsg{formID: formID, text: text, err: err}
 		}
 	case "enter":
 		if m.form == "Add proxy exclusion" || m.form == "Edit proxy exclusion" {
@@ -924,12 +947,12 @@ func (m *model) formKey(key, value string) tea.Cmd {
 		}
 		id, source := m.editProfileID, m.editProfileSource
 		form, input, name := m.form, strings.TrimSpace(string(m.input)), strings.TrimSpace(m.profileName)
+		m.retryPage, m.retryField = m.formPage, m.formField
 		m.closeForm()
 		if form == "DNS query" {
 			return m.queryDNS(input)
 		}
-		if m.page == generalPage || m.page == networkPage {
-			field := m.toolField
+		if field := m.retryField; field.Key != "" {
 			m.retryForm, m.retryInput = form, []rune(input)
 			return m.act(m.lang.Text("Save setting"), func() error {
 				return m.manager.SetToolSetting(m.ctx, field.Key, input)

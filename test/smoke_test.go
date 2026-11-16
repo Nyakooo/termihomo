@@ -123,9 +123,7 @@ func TestReleaseBinary(t *testing.T) {
 	if !strings.Contains(command("--lang", "zh-CN", "status"), "运行中") {
 		t.Fatal("Chinese status missing")
 	}
-	if _, _, err := run("", "stop"); err == nil {
-		t.Fatal("non-interactive stop accepted without confirmation")
-	}
+	command("tun", "stop")
 	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{}}
 	defer client.CloseIdleConnections()
 	response, err := client.Get("http://" + running.Controller + "/version")
@@ -247,7 +245,82 @@ func TestReleaseBinary(t *testing.T) {
 		t.Fatal("logs disclosed the subscription token")
 	}
 
-	command("restart", "--yes")
+	requestConfig := func(method, payload string, result any) {
+		t.Helper()
+		saved, err := os.ReadFile(stateFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var instance struct{ Secret, Controller string }
+		if err := json.Unmarshal(saved, &instance); err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(method, "http://"+instance.Controller+"/configs", strings.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+instance.Secret)
+		req.Header.Set("Content-Type", "application/json")
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode/100 != 2 {
+			t.Fatalf("%s /configs returned %d", method, response.StatusCode)
+		}
+		if result != nil {
+			if err := json.NewDecoder(response.Body).Decode(result); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	requestConfig(http.MethodPatch, `{"mode":"direct"}`, nil)
+	command("profile", "update", "--yes")
+	var profileMode struct{ Mode string }
+	requestConfig(http.MethodGet, "", &profileMode)
+	if profileMode.Mode != "direct" || !strings.Contains(command("proxy", "list"), `"Next"`+"\tSelector\t"+`"DIRECT"`) {
+		t.Fatal("profile update changed the live mode or selected node")
+	}
+	if err := os.WriteFile(overrides, fmt.Appendf(nil, "mixed-port: %d\nlog-level: debug\n", port), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command("reload")
+	if reloaded := status(); reloaded.State != "Running" || reloaded.PID != running.PID {
+		t.Fatalf("reload did not keep the running process: %+v", reloaded)
+	}
+	if !strings.Contains(command("proxy", "list"), `"Next"`+"\tSelector\t"+`"DIRECT"`) {
+		t.Fatal("reload did not preserve the selected node")
+	}
+	var applied struct {
+		LogLevel string `json:"log-level"`
+		Mode     string
+	}
+	requestConfig(http.MethodGet, "", &applied)
+	if applied.LogLevel != "debug" || applied.Mode != "direct" {
+		t.Fatalf("reload did not apply saved settings and preserve the live mode: %+v", applied)
+	}
+	checkProxy(localProxy, 200)
+
+	blocked, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocked.Close()
+	if err := os.WriteFile(overrides, fmt.Appendf(nil, "mixed-port: %d\n", blocked.Addr().(*net.TCPAddr).Port), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := run("", "restart"); err == nil {
+		t.Fatal("restart accepted an occupied port")
+	}
+	if unchanged := status(); unchanged.State != "Running" || unchanged.PID != running.PID || unchanged.Proxy != running.Proxy {
+		t.Fatalf("restart with an occupied port disturbed the running core: %+v", unchanged)
+	}
+	checkProxy(localProxy, 200)
+	if err := os.WriteFile(overrides, fmt.Appendf(nil, "mixed-port: %d\nlog-level: debug\n", port), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command("restart")
 	restarted := status()
 	if restarted.State != "Running" || restarted.PID == running.PID {
 		t.Fatalf("restart did not replace the process: %+v", restarted)
@@ -271,7 +344,7 @@ func TestReleaseBinary(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	command("stop", "--yes")
+	command("stop")
 	if s := status(); s.State != "Stopped" {
 		t.Fatalf("after stop: %+v", s)
 	}

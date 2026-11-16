@@ -162,6 +162,7 @@ func (m *model) saveProxyExclusion() tea.Cmd {
 		next[index] = input
 	}
 	m.retryForm, m.retryInput = m.form, []rune(input)
+	m.retryPage, m.retryField = m.formPage, m.formField
 	m.closeForm()
 	return m.act(m.lang.Text("Save setting"), func() error {
 		return m.manager.SetProxyExclusions(m.ctx, hosts, next)

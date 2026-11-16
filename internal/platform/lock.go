@@ -1,8 +1,10 @@
 package platform
 
 import (
-	"github.com/Nyakooo/termihomo/internal/i18n"
 	"os"
+	"path/filepath"
+
+	"github.com/Nyakooo/termihomo/internal/i18n"
 )
 
 // ErrInstanceBusy means another command is modifying the managed instance.
@@ -16,4 +18,13 @@ func (p Paths) LockInstance() (*os.File, error) {
 
 func (p Paths) LockServiceProbe() (*os.File, error) {
 	return p.lock("service-probe.lock")
+}
+
+func (p Paths) LockGeodata() (*os.File, error) {
+	return p.lock("geodata.lock")
+}
+
+// LockExecutableUpdate serializes replacements of the executable at path.
+func LockExecutableUpdate(path string) (*os.File, error) {
+	return (Paths{Data: filepath.Dir(path)}).lock(filepath.Base(path) + ".update.lock")
 }

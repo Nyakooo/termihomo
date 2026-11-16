@@ -3,9 +3,11 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -227,20 +229,120 @@ func validationDetail(output string, body []byte, configName string) string {
 	return detail
 }
 
+func validationInstance() instance {
+	return instance{Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only"}
+}
+
 func (m Manager) CheckConfig(ctx context.Context) error {
 	return m.withLock(func() error {
 		current, err := m.readProfile()
 		if err != nil {
 			return err
 		}
-		body, err := m.renderConfig(current.YAML, instance{
-			Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only",
-		})
+		body, err := m.renderConfig(current.YAML, validationInstance())
 		if err != nil {
 			return err
 		}
 		return m.validateConfig(ctx, body)
 	})
+}
+
+// Reload applies the active profile and saved settings without replacing Mihomo.
+func (m Manager) Reload(ctx context.Context) error {
+	return m.withLock(func() error {
+		state, err := m.runningInstance()
+		if err != nil {
+			return err
+		}
+		live, err := state.captureLiveConfig(ctx)
+		if err != nil {
+			return err
+		}
+		profile, err := m.readProfile()
+		if err != nil {
+			return err
+		}
+		candidate, err := m.renderConfig(profile.YAML, state)
+		if err != nil {
+			return err
+		}
+		previous, err := os.ReadFile(m.configPath())
+		if err != nil {
+			return err
+		}
+		err = m.applyLiveConfig(ctx, state, candidate, live)
+		if err == nil {
+			err = atomicWrite(m.configPath(), candidate)
+		}
+		if err != nil {
+			recover, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if restoreErr := m.applyLiveConfig(recover, state, previous, live); restoreErr != nil {
+				return errors.Join(err, i18n.Wrap("Could not restore the previous running configuration: %s", restoreErr))
+			}
+			return i18n.Wrap("Reload failed; restored previous configuration: %s", err)
+		}
+		return nil
+	})
+}
+
+type liveConfig struct {
+	Mode    string
+	TUN     map[string]any
+	LAN     bool `json:"allow-lan"`
+	Choices []Proxy
+}
+
+func (state instance) captureLiveConfig(ctx context.Context) (liveConfig, error) {
+	var live liveConfig
+	if err := state.request(ctx, http.MethodGet, "/configs", nil, &live); err != nil {
+		return live, err
+	}
+	if live.TUN["enable"] != true || live.TUN["device"] != tunDevice {
+		live.TUN = nil
+	}
+	var err error
+	live.Choices, err = state.proxies(ctx)
+	return live, err
+}
+
+func (m Manager) applyLiveConfig(ctx context.Context, state instance, body []byte, live liveConfig) error {
+	payload, err := hotReloadPayload(body, live.Mode, live.TUN)
+	if err != nil {
+		return err
+	}
+	if err := m.reloadConfig(ctx, state, payload); err != nil {
+		return err
+	}
+	if live.TUN != nil {
+		overview, err := state.overview(ctx)
+		if err != nil {
+			return err
+		}
+		if !overview.TUN {
+			return i18n.Message("TUN did not change state; check Mihomo logs and network privileges")
+		}
+	}
+	return state.restoreAvailableSelectors(ctx, live.Choices)
+}
+
+func hotReloadPayload(body []byte, mode string, tun map[string]any) ([]byte, error) {
+	var config map[string]any
+	if err := yaml.Unmarshal(body, &config); err != nil || config == nil {
+		return nil, i18n.Message("cannot read managed Mihomo configuration")
+	}
+	if mode != "" {
+		config["mode"] = strings.ToLower(mode)
+	}
+	// Startup YAML omits TUN. Preserve its settings in the controller payload.
+	if tun != nil {
+		config["tun"] = tun
+	}
+	body, err := yaml.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]string{"payload": string(body)})
 }
 
 func (m Manager) BackupConfig() (string, error) {

@@ -47,6 +47,15 @@ func (m Manager) ensureGeodata(ctx context.Context) error {
 		return err
 	}
 	manifest := m.readGeodataManifest()
+	if m.geodataReady(manifest) {
+		return nil
+	}
+	lock, err := m.Paths.LockGeodata()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	manifest = m.readGeodataManifest()
 	changed := false
 	for _, file := range geodataFiles {
 		target := filepath.Join(m.runDir(), file.name)
@@ -68,6 +77,16 @@ func (m Manager) ensureGeodata(ctx context.Context) error {
 		return err
 	}
 	return atomicWrite(m.geodataManifestPath(), body)
+}
+
+func (m Manager) geodataReady(manifest map[string]int64) bool {
+	for _, file := range geodataFiles {
+		info, err := os.Stat(filepath.Join(m.runDir(), file.name))
+		if err != nil || info.Size() <= 0 || manifest[file.name] != info.Size() {
+			return false
+		}
+	}
+	return true
 }
 
 func (m Manager) downloadGeodata(ctx context.Context, source, target string) (int64, error) {

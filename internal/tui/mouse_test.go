@@ -107,7 +107,7 @@ func TestCtrlVIgnoredOutsideForm(t *testing.T) {
 	readClipboard = func() (string, error) { return "https://example.com/sub", nil }
 
 	m := richModel()
-	m.Update(clipboardMsg{text: "https://example.com/sub"})
+	m.Update(clipboardMsg{formID: m.formID, text: "https://example.com/sub"})
 	if len(m.input) != 0 {
 		t.Fatalf("clipboard result outside a form should be ignored, got %q", string(m.input))
 	}
@@ -616,5 +616,33 @@ func TestProxyDefaultsToSelectedNodeWithoutMovingManualFocus(t *testing.T) {
 	m.applySnapshot(next)
 	if m.cursor != 1 {
 		t.Fatal("the first live snapshot should focus the selected node")
+	}
+}
+
+func TestClipboardResultStaysWithOriginalForm(t *testing.T) {
+	m := richModel()
+	original := readClipboard
+	t.Cleanup(func() { readClipboard = original })
+	readClipboard = func() (string, error) { return "old form text", nil }
+	m.openForm("Subscription URL", "")
+	paste := m.handleKey("ctrl+v", "")
+	m.handleKey("q", "q")
+	m.openForm("DNS query", "")
+	m.Update(paste())
+	if len(m.input) != 0 {
+		t.Fatalf("new form received old clipboard text: %q", m.input)
+	}
+}
+
+func TestSubscriptionRetryKeepsOriginalActionAfterPageChange(t *testing.T) {
+	m := richModel()
+	m.changePage(profiles)
+	m.openForm("Subscription URL", "https://example.com/sub")
+	m.handleKey("enter", "")
+	m.changePage(networkPage)
+	m.toolField = core.NetworkToolFields[1]
+	m.Update(operation{label: "Import profile", err: i18n.Message("subscription download failed")})
+	if cmd := m.handleKey("enter", ""); cmd == nil || m.feedback != "Import profile…" {
+		t.Fatalf("retry action on network page: %q", m.feedback)
 	}
 }

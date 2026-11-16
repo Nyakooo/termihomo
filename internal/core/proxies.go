@@ -280,6 +280,29 @@ func (state instance) restoreSelectors(ctx context.Context, choices []Proxy) err
 	return nil
 }
 
+func (state instance) restoreAvailableSelectors(ctx context.Context, choices []Proxy) error {
+	if len(choices) == 0 {
+		return nil
+	}
+	active, err := state.proxies(ctx)
+	if err != nil {
+		return err
+	}
+	groups := make(map[string]Proxy, len(active))
+	for _, group := range active {
+		groups[group.Name] = group
+	}
+	for _, choice := range choices {
+		group := groups[choice.Name]
+		if choice.Type == "Selector" && group.Type == "Selector" && group.Now != choice.Now && slices.Contains(group.All, choice.Now) {
+			if err := state.selectProxy(ctx, choice.Name, choice.Now); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (state instance) selectProxy(ctx context.Context, group, choice string) error {
 	body, err := json.Marshal(map[string]string{"name": choice})
 	if err != nil {

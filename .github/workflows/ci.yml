@@ -77,6 +77,17 @@ jobs:
             -ldflags="-s -w -X github.com/Nyakooo/termihomo/internal/version.Value=$GITHUB_REF_NAME -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
             -o build/termihomo-android-arm64 ./cmd/termihomo
           tar -czf dist/termihomo-android-arm64.tar.gz -C build termihomo-android-arm64
+      - name: Smoke test Unix installer
+        if: matrix.os != 'windows'
+        run: |
+          sh test/install-smoke.sh "dist/termihomo-${TARGET_OS}-${TARGET_ARCH}.tar.gz"
+          if [[ "$TARGET_OS" == linux && "$TARGET_ARCH" == amd64 ]]; then
+            sh test/install-smoke.sh dist/termihomo-android-arm64.tar.gz
+          fi
+      - name: Smoke test Windows installer
+        if: matrix.os == 'windows'
+        shell: powershell
+        run: ./test/install-smoke.ps1 "dist/termihomo-windows-$env:TARGET_ARCH.exe"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}

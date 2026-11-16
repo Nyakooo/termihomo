@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -64,29 +65,32 @@ func (m Manager) findProfile(id string) (profile, bool, error) {
 	if err != nil || current.ID == id {
 		return current, true, err
 	}
-	items, err := m.libraryProfiles()
-	if err != nil {
-		return profile{}, false, err
-	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, false, nil
+	if len(id) == 32 {
+		if _, err := hex.DecodeString(id); err == nil {
+			item, err := readProfileAt(filepath.Join(m.libraryDir(), id))
+			if err == nil && item.ID == id {
+				return item, false, nil
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				if err != nil {
+					return profile{}, false, err
+				}
+				return profile{}, false, i18n.Message("cannot read the saved profile")
+			}
 		}
 	}
 	return profile{}, false, i18n.Message("Profile no longer exists")
 }
 
 func (m Manager) UpdateSavedProfile(ctx context.Context, id string) error {
-	return m.withLock(func() error {
-		item, active, err := m.findProfile(id)
-		if err != nil {
-			return err
-		}
-		if item.URL == "" {
-			return i18n.Message("no subscription is configured")
-		}
-		return m.updateSavedProfile(ctx, item, active)
-	})
+	item, active, err := m.findProfile(id)
+	if err != nil {
+		return err
+	}
+	if item.URL == "" {
+		return i18n.Message("no subscription is configured")
+	}
+	return m.updateSavedProfile(ctx, item, active)
 }
 
 func (m Manager) updateSavedProfile(ctx context.Context, item profile, active bool) error {
@@ -95,10 +99,40 @@ func (m Manager) updateSavedProfile(ctx context.Context, item profile, active bo
 		return err
 	}
 	next.ID, next.Schedule, next.Added = item.ID, item.Schedule, item.addedAt()
-	if active {
-		return m.applyProfile(ctx, next)
+	if err := m.Paths.Ensure(); err != nil {
+		return err
 	}
-	return m.validateAndSaveProfile(ctx, next)
+	settings, err := m.readToolSettings()
+	if err != nil {
+		return err
+	}
+	candidate, err := renderConfigWithSettings(next.YAML, validationInstance(), settings)
+	if err != nil {
+		return err
+	}
+	if err := m.validateConfig(ctx, candidate); err != nil {
+		return err
+	}
+	return m.withLock(func() error {
+		current, isActive, err := m.findProfile(item.ID)
+		if err != nil {
+			return err
+		}
+		if isActive != active || !reflect.DeepEqual(current, item) {
+			return i18n.Message("Profile changed during the update. Run the command again.")
+		}
+		currentSettings, err := m.readToolSettings()
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(settings, currentSettings) {
+			return i18n.Message("Settings changed during the update. Run the command again.")
+		}
+		if active {
+			return m.applyProfileCandidate(ctx, next, true)
+		}
+		return m.saveValidatedProfile(next)
+	})
 }
 
 func (m Manager) DeleteProfile(ctx context.Context, id string) error {
@@ -289,15 +323,17 @@ func (m Manager) AddProfile(ctx context.Context, source, name string, local bool
 }
 
 func (m Manager) validateAndSaveProfile(ctx context.Context, next profile) error {
-	config, err := m.renderConfig(next.YAML, instance{
-		Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only",
-	})
+	config, err := m.renderConfig(next.YAML, validationInstance())
 	if err != nil {
 		return err
 	}
 	if err := m.validateConfig(ctx, config); err != nil {
 		return err
 	}
+	return m.saveValidatedProfile(next)
+}
+
+func (m Manager) saveValidatedProfile(next profile) error {
 	next.Updated = time.Now()
 	if next.Added.IsZero() {
 		next.Added = next.Updated
@@ -344,30 +380,29 @@ func (m Manager) ActivateProfile(ctx context.Context, id string) error {
 }
 
 func (m Manager) UpdateProfiles(ctx context.Context, dueOnly bool) (updated, failed int, err error) {
-	err = m.withLock(func() error {
-		current, err := m.readProfile()
-		if err != nil {
-			return err
+	current, err := m.readProfile()
+	if err != nil {
+		return 0, 0, err
+	}
+	items, err := m.libraryProfiles()
+	if err != nil {
+		return 0, 0, err
+	}
+	for index, item := range append([]profile{current}, items...) {
+		if ctx.Err() != nil {
+			break
 		}
-		items, err := m.libraryProfiles()
-		if err != nil {
-			return err
+		if item.URL == "" || (index > 0 && item.ID == current.ID) {
+			continue
 		}
-		for index, item := range append([]profile{current}, items...) {
-			if item.URL == "" || (index > 0 && item.ID == current.ID) {
-				continue
-			}
-			if dueOnly && !item.UpdateDue(time.Now()) {
-				continue
-			}
-			err := m.updateSavedProfile(ctx, item, index == 0)
-			if err != nil {
-				failed++
-			} else {
-				updated++
-			}
+		if dueOnly && !item.UpdateDue(time.Now()) {
+			continue
 		}
-		return ctx.Err()
-	})
-	return
+		if err := m.updateSavedProfile(ctx, item, index == 0); err != nil {
+			failed++
+		} else {
+			updated++
+		}
+	}
+	return updated, failed, ctx.Err()
 }

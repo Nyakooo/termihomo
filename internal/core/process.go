@@ -157,35 +157,114 @@ func (m Manager) Restart(ctx context.Context) error {
 	return m.withLock(func() error {
 		previous, stateErr := m.runningInstance()
 		var choices []Proxy
-		var mode string
+		var overview Overview
 		if stateErr == nil {
 			// A degraded controller should not prevent a manual restart.
 			choices, _ = previous.proxies(ctx)
-			overview, _ := previous.overview(ctx)
-			mode = overview.Mode
+			overview, _ = previous.overview(ctx)
+		}
+		address, err := m.configuredProxyAddress()
+		if err != nil {
+			return err
+		}
+		var previousConfig []byte
+		if stateErr == nil {
+			previousConfig, err = os.ReadFile(m.configPath())
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			if err := m.checkRestartConfig(ctx, previous, address); err != nil {
+				return err
+			}
+		}
+		owner, _ := m.proxyOwnership()
+		proxyOwned := false
+		if len(owner.Applied) > 0 {
+			proxyOwned = m.SystemProxy(ctx).Owned
 		}
 		if err := m.stop(); err != nil {
 			return err
 		}
-		m.restoreSystemProxy()
-		if err := m.startOnMode(ctx, "", previous.Paused && stateErr == nil); err != nil {
+		if err := m.startOnMode(ctx, address, previous.Paused && stateErr == nil); err != nil {
+			if previousConfig != nil {
+				recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+				defer cancel()
+				restoreErr := atomicWrite(m.configPath(), previousConfig)
+				if restoreErr == nil {
+					previous.Started, previous.Stopping = time.Now(), false
+					restoreErr = m.launchPrepared(recovery, previous)
+					if restoreErr == nil {
+						restored, readErr := m.runningInstance()
+						if readErr != nil {
+							return errors.Join(err, readErr)
+						}
+						if runtimeErr := m.restoreRuntime(recovery, restored, choices, overview); runtimeErr != nil {
+							return errors.Join(err, i18n.Wrap("Previous Mihomo process is running, but runtime settings could not be restored: %s", runtimeErr))
+						}
+						return i18n.Wrap("Restart failed; restored the previous Mihomo configuration: %s", err)
+					}
+				}
+				err = errors.Join(err, i18n.Wrap("Could not restart the previous Mihomo configuration: %s", restoreErr))
+			}
+			if proxyOwned {
+				m.restoreSystemProxy()
+			}
 			return err
-		}
-		if len(choices) == 0 && mode == "" {
-			return nil
 		}
 		state, err := m.runningInstance()
 		if err != nil {
+			if proxyOwned {
+				m.restoreSystemProxy()
+			}
 			return err
 		}
-		if err := state.restoreSelectors(ctx, choices); err != nil {
-			return err
+
+		var proxyErr error
+		if proxyOwned && state.Proxy != previous.Proxy && m.SystemProxy(ctx).Owned {
+			proxyErr = m.enableSystemProxy(ctx, state.Proxy, true)
+			if proxyErr != nil {
+				m.restoreSystemProxy()
+			}
 		}
-		if mode != "" {
-			return state.updateRuntime(ctx, map[string]any{"mode": mode}, func(actual Overview) bool { return actual.Mode == mode })
-		}
-		return nil
+		return errors.Join(proxyErr, m.restoreRuntime(ctx, state, choices, overview))
 	})
+}
+
+func (m Manager) checkRestartConfig(ctx context.Context, previous instance, address string) error {
+	if address != previous.Proxy {
+		listener, err := net.Listen("tcp4", address)
+		if err != nil {
+			return err
+		}
+		defer listener.Close()
+	}
+	previous.Proxy = address
+	current, err := m.readProfile()
+	if err != nil {
+		return err
+	}
+	candidate, err := m.renderConfig(current.YAML, previous)
+	if err != nil {
+		return err
+	}
+	return m.validateConfig(ctx, candidate)
+}
+
+func (m Manager) restoreRuntime(ctx context.Context, state instance, choices []Proxy, overview Overview) error {
+	var modeErr, lanErr, tunErr error
+	selectorErr := state.restoreAvailableSelectors(ctx, choices)
+	if overview.Mode != "" {
+		modeErr = state.updateRuntime(ctx, map[string]any{"mode": overview.Mode}, func(actual Overview) bool {
+			return actual.Mode == overview.Mode
+		})
+	}
+	if !state.Paused && overview.LAN {
+		lanErr = state.setLAN(ctx, true)
+	}
+	if !state.Paused && overview.TUNConfigured {
+		tunErr = m.setTUN(ctx, state, true)
+	}
+	return errors.Join(selectorErr, modeErr, lanErr, tunErr)
 }
 
 func (m Manager) withLock(fn func() error) error {
@@ -219,6 +298,18 @@ func (m Manager) startOn(ctx context.Context, proxyAddress string) error {
 
 const DefaultProxyPort = 7890
 
+func (m Manager) configuredProxyAddress() (string, error) {
+	settings, err := m.readToolSettings()
+	if err != nil {
+		return "", err
+	}
+	port := DefaultProxyPort
+	if configured, ok := settings["mixed-port"].(int); ok && configured > 0 && configured <= 65535 {
+		port = configured
+	}
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), nil
+}
+
 func (m Manager) startOnMode(ctx context.Context, proxyAddress string, paused bool) error {
 	status, err := m.Status(ctx)
 	if err != nil {
@@ -246,15 +337,10 @@ func (m Manager) startOnMode(ctx context.Context, proxyAddress string, paused bo
 		return err
 	}
 	if proxyAddress == "" {
-		port := DefaultProxyPort
-		settings, err := m.readToolSettings()
+		proxyAddress, err = m.configuredProxyAddress()
 		if err != nil {
 			return err
 		}
-		if configured, ok := settings["mixed-port"].(int); ok && configured > 0 && configured <= 65535 {
-			port = configured
-		}
-		proxyAddress = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 	}
 	proxy, err := net.Listen("tcp4", proxyAddress)
 	if err != nil {
@@ -288,6 +374,10 @@ func (m Manager) startOnMode(ctx context.Context, proxyAddress string, paused bo
 	if err := proxy.Close(); err != nil {
 		return err
 	}
+	return m.launchPrepared(ctx, state)
+}
+
+func (m Manager) launchPrepared(ctx context.Context, state instance) error {
 	cmd, release, err := m.startKernel()
 	if err != nil {
 		return err

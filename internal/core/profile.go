@@ -294,16 +294,14 @@ func (m Manager) EditProfile(ctx context.Context, id, name, source string, sched
 }
 
 func (m Manager) UpdateProfile(ctx context.Context) error {
-	return m.withLock(func() error {
-		current, err := m.readProfile()
-		if err != nil {
-			return err
-		}
-		if current.URL == "" {
-			return i18n.Message("no subscription is configured")
-		}
-		return m.fetchSubscription(ctx, current.URL, current.Name, current.CustomName)
-	})
+	current, err := m.readProfile()
+	if err != nil {
+		return err
+	}
+	if current.URL == "" {
+		return i18n.Message("no subscription is configured")
+	}
+	return m.updateSavedProfile(ctx, current, true)
 }
 
 func readProfileBody(reader io.Reader) ([]byte, error) {
@@ -463,6 +461,10 @@ func parseSubscriptionQuota(header string) *SubscriptionQuota {
 }
 
 func (m Manager) applyProfile(ctx context.Context, next profile) error {
+	return m.applyProfileCandidate(ctx, next, false)
+}
+
+func (m Manager) applyProfileCandidate(ctx context.Context, next profile, validated bool) error {
 	if _, err := os.Stat(m.binary()); errors.Is(err, os.ErrNotExist) {
 		return i18n.Message("install Mihomo before importing a profile")
 	} else if err != nil {
@@ -486,14 +488,16 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	}
 	renderState := state
 	if state.PID == 0 {
-		renderState = instance{Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only"}
+		renderState = validationInstance()
 	}
 	candidate, err := m.renderConfig(next.YAML, renderState)
 	if err != nil {
 		return err
 	}
-	if err := m.validateConfig(ctx, candidate); err != nil {
-		return err
+	if !validated {
+		if err := m.validateConfig(ctx, candidate); err != nil {
+			return err
+		}
 	}
 	if next.Added.IsZero() {
 		next.Added = next.addedAt()
@@ -513,7 +517,7 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	if err := m.ready(ctx, state); err != nil {
 		return i18n.Message("cannot update an unhealthy Mihomo instance")
 	}
-	choices, err := state.proxies(ctx)
+	live, err := state.captureLiveConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -524,7 +528,7 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	if err := atomicWrite(m.configPath()+".bak", previous); err != nil {
 		return err
 	}
-	pending := profileChange{Previous: previous, Choices: choices, NextDigest: sha256.Sum256(record)}
+	pending := profileChange{Previous: previous, liveConfig: live, NextDigest: sha256.Sum256(record)}
 	journal, err := json.Marshal(pending)
 	if err != nil {
 		return err
@@ -536,7 +540,7 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 		_ = os.Remove(m.pendingPath())
 		return err
 	}
-	if err := m.reload(ctx, state); err != nil {
+	if err := m.applyLiveConfig(ctx, state, candidate, live); err != nil {
 		return m.failProfileChange(state, pending, err)
 	}
 	if err := atomicWrite(m.profilePath(), record); err != nil {
@@ -546,16 +550,16 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 	return os.Remove(m.pendingPath())
 }
 
-func (m Manager) reload(ctx context.Context, state instance) error {
-	if err := state.requestWithin(ctx, 20*time.Second, http.MethodPut, "/configs", bytes.NewBufferString("{}"), nil); err != nil {
+func (m Manager) reloadConfig(ctx context.Context, state instance, request []byte) error {
+	if err := state.requestWithin(ctx, 20*time.Second, http.MethodPut, "/configs", bytes.NewReader(request), nil); err != nil {
 		return err
 	}
 	return m.ready(ctx, state)
 }
 
 type profileChange struct {
-	Previous   []byte
-	Choices    []Proxy
+	Previous []byte
+	liveConfig
 	NextDigest [sha256.Size]byte
 }
 
@@ -622,8 +626,10 @@ func (m Manager) restoreConfig(state instance, pending profileChange) error {
 	if err != nil {
 		return i18n.Wrap("profile update failed and the restored process is unavailable: %s", err)
 	}
-	if err := restored.restoreSelectors(ctx, pending.Choices); err != nil {
-		return i18n.Wrap("previous profile is running, but a selector choice could not be restored: %s", err)
+	if err := m.restoreRuntime(ctx, restored, pending.Choices, Overview{
+		Mode: strings.ToLower(pending.Mode), LAN: pending.LAN, TUNConfigured: pending.TUN != nil,
+	}); err != nil {
+		return i18n.Wrap("previous profile is running, but its runtime settings could not be restored: %s", err)
 	}
 	if err := m.ready(ctx, restored); err != nil {
 		return i18n.Wrap("profile update failed and recovery could not be verified: %s", err)

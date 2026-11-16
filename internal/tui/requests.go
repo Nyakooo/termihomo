@@ -14,12 +14,36 @@ import (
 type requestRate struct{ down, up int64 }
 
 type requestState struct {
+	cache            *requestViewCache
 	rates            map[string]requestRate
 	protocols, rules map[string]bool
 	category         int
 	column           int
 	menu             string
 	option           int
+}
+
+type requestViewCache struct {
+	source       *core.Connection
+	count        int
+	visible      []core.Connection
+	visibleReady bool
+	filter       string
+	category     int
+	options      [2][]string
+	optionsReady [2]bool
+}
+
+func (m *model) requestCache() *requestViewCache {
+	var first *core.Connection
+	if len(m.snapshot.connections) > 0 {
+		first = &m.snapshot.connections[0]
+	}
+	if cache := m.requests.cache; cache != nil && cache.source == first && cache.count == len(m.snapshot.connections) {
+		return cache
+	}
+	m.requests.cache = &requestViewCache{source: first, count: len(m.snapshot.connections)}
+	return m.requests.cache
 }
 
 var requestCategories = []string{"None", "Application", "Host", "Rule", "Exit"}
@@ -100,6 +124,10 @@ func requestCategory(c core.Connection, category int) string {
 }
 
 func (m *model) visibleConnections() []core.Connection {
+	cache := m.requestCache()
+	if cache.visibleReady && cache.filter == m.filter && cache.category == m.requests.category {
+		return cache.visible
+	}
 	var items []core.Connection
 	for _, c := range m.snapshot.connections {
 		protocol := strings.ToUpper(c.Metadata.Network)
@@ -124,22 +152,37 @@ func (m *model) visibleConnections() []core.Connection {
 		}
 		return cmp.Or(cmp.Compare(b.Download+b.Upload, a.Download+a.Upload), b.Start.Compare(a.Start))
 	})
+	cache.visible, cache.visibleReady = items, true
+	cache.filter, cache.category = m.filter, m.requests.category
 	return items
 }
 
 func (m *model) requestFilters(protocol bool) []string {
-	var values []string
+	cache := m.requestCache()
+	index := 0
+	if protocol {
+		index = 1
+	}
+	if cache.optionsReady[index] {
+		return cache.options[index]
+	}
+	values := make(map[string]struct{})
 	for _, c := range m.snapshot.connections {
 		value := c.Rule
 		if protocol {
 			value = strings.ToUpper(c.Metadata.Network)
 		}
 		if value != "" {
-			values = append(values, value)
+			values[value] = struct{}{}
 		}
 	}
-	slices.Sort(values)
-	return slices.Compact(values)
+	ordered := make([]string, 0, len(values))
+	for value := range values {
+		ordered = append(ordered, value)
+	}
+	slices.Sort(ordered)
+	cache.options[index], cache.optionsReady[index] = ordered, true
+	return ordered
 }
 
 func (m *model) pruneRequestFilters() {
@@ -179,6 +222,9 @@ func (m *model) toggleRequestFilter(key string) {
 }
 
 func (m *model) resetRequestSelection() {
+	if m.requests.cache != nil {
+		m.requests.cache.visibleReady = false
+	}
 	m.cursor = 0
 	m.connectionSelection = nil
 }

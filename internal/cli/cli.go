@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/Nyakooo/termihomo/internal/platform"
 	"github.com/Nyakooo/termihomo/internal/tui"
+	"github.com/Nyakooo/termihomo/internal/update"
 	"github.com/Nyakooo/termihomo/internal/version"
 	"github.com/charmbracelet/x/term"
 )
@@ -28,10 +30,13 @@ const help = `Usage: termihomo [--lang en|zh-CN] [command]
 Commands:
   init       Initialize private configuration, data and log directories
   install    Download and verify the supported Mihomo release
+  update     Update the Termihomo executable
   start      Start the managed Mihomo in the background
-  stop [--yes]       Stop the managed Mihomo
-  restart [--yes]    Restart the managed Mihomo
+  stop       Stop the managed Mihomo
+  reload     Reload the current configuration in the running process
+  restart    Restart the managed Mihomo process
   status [--json]  Show process and controller state
+  tun start|stop     Enable or disable TUN on the running core
   profile list        Show the active profile
   profile import FILE [--yes] Import a local Mihomo YAML file
   profile add URL [--yes]     Add a subscription (use - to read the URL from stdin)
@@ -52,10 +57,13 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
 命令：
   init                        初始化私有配置、数据和日志目录
   install                     下载并校验支持的 Mihomo 版本
+  update                      更新 Termihomo 程序
   start                       在后台启动托管的 Mihomo
-  stop [--yes]                停止内核
-  restart [--yes]             重启内核
+  stop                        停止内核
+  reload                      在当前进程中重新加载配置
+  restart                     重启内核进程
   status [--json]             查看进程和控制接口状态
+  tun start|stop              开启或关闭运行中内核的 TUN
   profile list                查看当前配置
   profile import FILE [--yes] 导入本地 Mihomo YAML
   profile add URL [--yes]     添加订阅（用 - 从标准输入读取地址）
@@ -120,6 +128,24 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	case len(args) == 1 && args[0] == "version":
 		fmt.Fprintf(stdout, "termihomo %s (%s/%s)\n", version.Value, runtime.GOOS, runtime.GOARCH)
 		return 0
+	case len(args) == 1 && args[0] == "update":
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		tag, changed, err := update.Run(ctx, version.Value)
+		if errors.Is(err, update.ErrUpdateScheduled) {
+			fmt.Fprintf(stdout, lang.Text("Termihomo %s will be installed after this process exits.")+"\n", tag)
+			return 0
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, lang.Error(err))
+			return 1
+		}
+		if changed {
+			fmt.Fprintf(stdout, lang.Text("Updated Termihomo to %s")+"\n", tag)
+		} else {
+			fmt.Fprintf(stdout, lang.Text("Termihomo %s is up to date")+"\n", tag)
+		}
+		return 0
 	case len(args) == 1 && args[0] == "init":
 		paths, err := platform.ResolvePaths()
 		if err == nil {
@@ -168,7 +194,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		}
 	}
 	manager := core.Manager{Paths: paths}
-	needsConfirmation := mayConfirm
+	needsConfirmation := args[0] == "profile" && mayConfirm
 	if args[0] == "profile" && mayConfirm && args[1] != "update" {
 		info, err := manager.Profile()
 		if err != nil {
@@ -200,8 +226,23 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		err = manager.Start(ctx)
 	case "stop":
 		err = manager.Stop()
+	case "reload":
+		err = manager.Reload(ctx)
+		if err == nil {
+			fmt.Fprintln(stdout, lang.Text("Mihomo configuration reloaded"))
+		}
 	case "restart":
 		err = manager.Restart(ctx)
+	case "tun":
+		enable := args[1] == "start"
+		err = manager.SetTUN(ctx, enable)
+		if err == nil {
+			message := "TUN disabled"
+			if enable {
+				message = "TUN enabled"
+			}
+			fmt.Fprintln(stdout, lang.Text(message))
+		}
 	case "logs":
 		err = runLogs(ctx, manager, len(args) == 2, stdout, stderr, lang)
 	case "config":
@@ -258,8 +299,10 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 
 func validManagedCommand(args []string) bool {
 	switch args[0] {
-	case "install", "start", "stop", "restart":
+	case "install", "start", "stop", "reload", "restart":
 		return len(args) == 1
+	case "tun":
+		return len(args) == 2 && (args[1] == "start" || args[1] == "stop")
 	case "status":
 		return len(args) == 1 || (len(args) == 2 && args[1] == "--json")
 	case "rules":

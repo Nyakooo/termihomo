@@ -55,8 +55,9 @@ type refreshMsg struct{}
 type trafficOffline struct{}
 type logsOffline struct{}
 type clipboardMsg struct {
-	text string
-	err  error
+	formID uint64
+	text   string
+	err    error
 }
 type profileSpin uint64
 
@@ -139,6 +140,9 @@ type model struct {
 	proxyGroup               string
 	filter                   string
 	form                     string
+	formID                   uint64
+	formPage                 page
+	formField                core.ToolField
 	input                    []rune
 	formHistories            [3]formHistory
 	inputCursor              int
@@ -163,6 +167,8 @@ type model struct {
 	retryName                string
 	formError                string
 	retryForm                string
+	retryPage                page
+	retryField               core.ToolField
 	retryInput               []rune
 	confirm                  func() error
 	confirmLabel             string
@@ -381,6 +387,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
 			if m.retryForm != "" {
 				m.openForm(m.retryForm, string(m.retryInput))
+				m.formPage, m.formField = m.retryPage, m.retryField
 				m.profileName = m.retryName
 				m.editProfileID, m.editProfileSource = m.retryProfileID, m.retryProfileSource
 				m.profileSchedule = m.retrySchedule
@@ -417,7 +424,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addInput(msg.Content)
 		}
 	case clipboardMsg:
-		if m.form != "" {
+		if m.form != "" && msg.formID == m.formID {
 			if msg.err != nil {
 				m.formError = m.lang.Error(msg.err)
 				m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
@@ -472,6 +479,7 @@ func (m *model) applySnapshot(next snapshot) {
 	}
 	m.updateRequestSamples(next)
 	m.snapshot = next
+	m.requests.cache = nil
 	if focusOnLoad {
 		m.focusSelectedProxy()
 	}

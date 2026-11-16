@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Nyakooo/termihomo/internal/platform"
 )
@@ -120,5 +122,53 @@ func TestSubscriptionRetriesWithCompatibleClientWhenProviderReturnsLinks(t *test
 	item, err := downloadSubscription(t.Context(), server.URL, "", "")
 	if err != nil || string(item.YAML) != yaml || item.Name != "Provider profile" || item.Quota == nil || item.Quota.Total != 50 {
 		t.Fatalf("expected compatible profile and its metadata, error=%v", err)
+	}
+}
+
+func TestSubscriptionDownloadDoesNotBlockStop(t *testing.T) {
+	dir := t.TempDir()
+	m := Manager{Paths: platform.Paths{
+		Config: filepath.Join(dir, "config"),
+		Data:   filepath.Join(dir, "data"),
+		Logs:   filepath.Join(dir, "state", "logs"),
+	}}
+	if err := m.Paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		close(started)
+		<-req.Context().Done()
+	}))
+	defer server.Close()
+	record, err := json.Marshal(profile{URL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWrite(m.profilePath(), record); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := m.UpdateProfiles(ctx, false)
+		done <- err
+	}()
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("refresh stopped before download: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := m.Stop(); err != nil {
+		t.Fatalf("stop while subscription is downloading: %v", err)
+	}
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("cancelled subscription download succeeded")
 	}
 }

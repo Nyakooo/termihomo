@@ -77,43 +77,50 @@ func (m Manager) SetTUN(ctx context.Context, enable bool) error {
 		if err != nil {
 			return err
 		}
-		current, err := state.overview(ctx)
+		return m.setTUN(ctx, state, enable)
+	})
+}
+
+func (m Manager) setTUN(ctx context.Context, state instance, enable bool) error {
+	if enable && state.Paused {
+		return i18n.Message("Start Mihomo to apply changes")
+	}
+	current, err := state.overview(ctx)
+	if err != nil {
+		return err
+	}
+	stack, detectInterface := "system", true
+	if enable {
+		if current.TUN {
+			return nil
+		}
+		settings, err := m.readToolSettings()
 		if err != nil {
 			return err
 		}
-		stack, detectInterface := "system", true
-		if enable {
-			if current.TUN {
-				return nil
-			}
-			settings, err := m.readToolSettings()
+		if saved, ok := settings["app.tun-stack"].(string); ok && saved != "" {
+			stack = saved
+		}
+		detectInterface = current.OutboundInterface == ""
+		if _, err := net.InterfaceByName(tunDevice); err == nil {
+			return i18n.Message("The termihomo network interface is already in use")
+		}
+		if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) {
+			state, err = m.authorizeTUN(ctx, state, current)
 			if err != nil {
 				return err
 			}
-			if saved, ok := settings["app.tun-stack"].(string); ok && saved != "" {
-				stack = saved
-			}
-			detectInterface = current.OutboundInterface == ""
-			if _, err := net.InterfaceByName(tunDevice); err == nil {
-				return i18n.Message("The termihomo network interface is already in use")
-			}
-			if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) {
-				state, err = m.authorizeTUN(ctx, state, current)
-				if err != nil {
-					return err
-				}
-			} else if err != nil {
-				return err
-			}
+		} else if err != nil {
+			return err
 		}
-		patch := map[string]any{"tun": map[string]any{
-			"enable": enable, "device": tunDevice, "stack": stack,
-			"auto-route": true, "auto-detect-interface": detectInterface,
-			"dns-mode": "disabled",
-		}}
-		return state.updateRuntime(ctx, patch, func(actual Overview) bool {
-			return actual.TUN == enable && actual.TUNConfigured == enable
-		})
+	}
+	patch := map[string]any{"tun": map[string]any{
+		"enable": enable, "device": tunDevice, "stack": stack,
+		"auto-route": true, "auto-detect-interface": detectInterface,
+		"dns-mode": "disabled",
+	}}
+	return state.updateRuntime(ctx, patch, func(actual Overview) bool {
+		return actual.TUN == enable && actual.TUNConfigured == enable
 	})
 }
 

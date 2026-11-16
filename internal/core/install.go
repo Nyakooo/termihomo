@@ -20,7 +20,7 @@ import (
 	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
-// Version is the release verified in docs/TECHNICAL_RESEARCH.md.
+// Version is the supported Mihomo release.
 const Version = "v1.19.34"
 
 type Manager struct {

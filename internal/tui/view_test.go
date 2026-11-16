@@ -759,3 +759,61 @@ func TestDNSDetailsAndCacheAction(t *testing.T) {
 		}
 	}
 }
+
+func TestQuitKeyClosesOnlyCurrentLayer(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		open  func(*model)
+		shown func(*model) bool
+	}{
+		{"services", func(m *model) { m.services.dialog = true }, func(m *model) bool { return m.services.dialog }},
+		{"help", func(m *model) { m.help = true }, func(m *model) bool { return m.help }},
+		{"node detail", func(m *model) { m.page, m.detail = proxies, true }, func(m *model) bool { return m.detail }},
+		{"request detail", func(m *model) { m.page, m.detail = connectionsPage, true }, func(m *model) bool { return m.detail }},
+		{"DNS detail", func(m *model) { m.page, m.detail = dnsPage, true }, func(m *model) bool { return m.detail }},
+		{"request filter", func(m *model) { m.page = connectionsPage; m.openRequestMenu("Category") }, func(m *model) bool { return m.requests.menu != "" }},
+		{"confirmation", func(m *model) { m.confirm = func() error { t.Error("confirmation ran"); return nil } }, func(m *model) bool { return m.confirm != nil }},
+		{"form", func(m *model) { m.openForm("Subscription URL", "") }, func(m *model) bool { return m.form != "" }},
+		{"exclusion list", func(m *model) { m.page, m.showProxyExclusions = networkPage, true }, func(m *model) bool { return m.showProxyExclusions }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := richModel()
+			tc.open(m)
+			page := m.page
+			if cmd := m.handleKey("q", "q"); cmd != nil || tc.shown(m) || m.page != page {
+				t.Fatal("q must only close the current layer")
+			}
+			cmd := m.handleKey("q", "q")
+			if cmd == nil {
+				t.Fatal("q on the main screen must quit")
+			}
+			if _, ok := cmd().(tea.QuitMsg); !ok {
+				t.Fatal("expected a quit command on the main screen")
+			}
+		})
+	}
+}
+
+func TestQuitKeyReturnsFromExclusionEditorToList(t *testing.T) {
+	m := richModel()
+	m.page, m.showProxyExclusions = networkPage, true
+	m.openForm("Add proxy exclusion", "")
+	m.handleKey("alt+q", "")
+	if string(m.input) != "q" {
+		t.Fatalf("form input = %q", m.input)
+	}
+	if cmd := m.handleKey("q", "q"); cmd != nil || m.form != "" || !m.showProxyExclusions {
+		t.Fatal("first q must close the form and keep the list")
+	}
+	if cmd := m.handleKey("q", "q"); cmd != nil || m.showProxyExclusions || m.cursor != networkExclusions {
+		t.Fatal("second q must return to Network settings")
+	}
+	m.services.dialog, m.page = true, dashboard
+	cmd := m.handleKey("ctrl+c", "")
+	if cmd == nil {
+		t.Fatal("Ctrl+C must quit from a modal")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("expected Ctrl+C to quit")
+	}
+}
