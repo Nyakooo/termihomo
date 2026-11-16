@@ -37,7 +37,7 @@ go build ./cmd/termihomo
 ## 提交前检查 / Before submitting
 
 ```sh
-gofmt -w <changed-go-files>
+gofmt -w path/to/changed_file.go
 go test ./...
 go build ./cmd/termihomo
 ```
