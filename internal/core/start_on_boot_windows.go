@@ -15,8 +15,10 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"golang.org/x/sys/windows"
 )
 
 func bootTask() (string, *user.User, error) {
@@ -70,9 +72,31 @@ func (m Manager) setStartOnBoot(ctx context.Context, enabled bool) error {
 		}
 	}
 	if out, err := taskCommand(ctx, args...); err != nil {
-		return i18n.Errorf("Could not change startup before login: %s", strings.TrimSpace(string(out)+" "+err.Error()))
+		detail := strings.TrimSpace(bootTaskOutput(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return i18n.Errorf("Could not change startup before login: %s", detail)
 	}
 	return nil
+}
+
+func bootTaskOutput(out []byte) string {
+	if utf8.Valid(out) {
+		return string(out)
+	}
+	codePage, err := windows.GetConsoleOutputCP()
+	const oemCodePage = 1
+	const utf8CodePage = 65001
+	if err != nil || codePage == utf8CodePage {
+		codePage = oemCodePage
+	}
+	decoded := make([]uint16, len(out))
+	n, err := windows.MultiByteToWideChar(codePage, 0, &out[0], int32(len(out)), &decoded[0], int32(len(decoded)))
+	if err != nil {
+		return strings.ToValidUTF8(string(out), "�")
+	}
+	return string(utf16.Decode(decoded[:n]))
 }
 
 func (m Manager) writeBootTask(sid string) (string, error) {
