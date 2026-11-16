@@ -1432,7 +1432,10 @@ func (m *model) logsPage(height int) []string {
 		row--
 	}
 	if row == len(rows)-1 {
-		rows[row] = s.faint(m.lang.Text("Waiting for log events"))
+		rows[0] = s.faint(m.lang.Text("Waiting for log events"))
+	} else if row >= 0 {
+		filled := copy(rows, rows[row+1:])
+		clear(rows[filled:])
 	}
 	title := m.lang.Text("Mihomo logs")
 	if m.logOffset > 0 {

@@ -851,6 +851,24 @@ func TestQuitKeyReturnsFromExclusionEditorToList(t *testing.T) {
 	}
 }
 
+func TestLiveLogsFillFromTop(t *testing.T) {
+	m := richModel()
+	m.page, m.height, m.logLevel, m.logEntries = logs, 24, levelIndex("info"), nil
+	height := m.height - 4
+	empty := m.logsPage(height)
+	if !strings.Contains(empty[1], m.lang.Text("Waiting for log events")) {
+		t.Fatal("waiting message must start at the top of the log panel")
+	}
+	m.Update(core.LogEntry{Type: "info", Payload: "first event"})
+	first := m.logsPage(height)
+	m.Update(core.LogEntry{Type: "info", Payload: "second event"})
+	second := m.logsPage(height)
+	if len(second) != height || first[1] != second[1] ||
+		!strings.Contains(second[1], "first event") || !strings.Contains(second[2], "second event") {
+		t.Fatal("new events must fill the log panel from the top without moving existing rows while space remains")
+	}
+}
+
 func TestLogHistoryStaysInPlaceDuringBurst(t *testing.T) {
 	m := richModel()
 	m.page, m.height, m.logLevel, m.logEntries = logs, 24, levelIndex("info"), nil
