@@ -74,10 +74,10 @@ Termihomo 使用分区式终端界面组织信息：
 ### Linux / macOS
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh | sh
+installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && printf '%s\n' "$installer" | sh
 ~~~
 
-默认安装到 <code>~/.local/bin</code>。如果该目录不在 <code>PATH</code> 中，将其加入当前 Shell 环境：
+Linux 和 macOS 默认安装到 <code>~/.local/bin</code>。如果 <code>~/.local/bin</code> 不在 <code>PATH</code> 中，可以加入当前 Shell 环境。
 
 ~~~sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -85,8 +85,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Windows PowerShell
 
+请在 PowerShell 窗口中运行以下命令。
+
 ~~~powershell
-& ([scriptblock]::Create((Invoke-RestMethod 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop)))
+irm 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop | iex
 ~~~
 
 默认安装到 <code>%LOCALAPPDATA%\Programs\Termihomo</code>，安装程序会将目录加入当前用户的 <code>PATH</code>。

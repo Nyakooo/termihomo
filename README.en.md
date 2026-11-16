@@ -74,10 +74,10 @@ Press <code>?</code> inside the application to view the current key bindings. Th
 ### Linux / macOS
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh | sh
+installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && printf '%s\n' "$installer" | sh
 ~~~
 
-The default install directory is <code>~/.local/bin</code>. Add it to your shell's <code>PATH</code> if needed:
+Linux and macOS install to <code>~/.local/bin</code> by default. Add <code>~/.local/bin</code> to your shell's <code>PATH</code> if needed.
 
 ~~~sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -85,8 +85,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Windows PowerShell
 
+Run the following command in a PowerShell window.
+
 ~~~powershell
-& ([scriptblock]::Create((Invoke-RestMethod 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop)))
+irm 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -ErrorAction Stop | iex
 ~~~
 
 The default directory is <code>%LOCALAPPDATA%\Programs\Termihomo</code>. The installer adds it to the current user's <code>PATH</code>.
