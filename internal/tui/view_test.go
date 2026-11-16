@@ -944,14 +944,14 @@ func TestTraySummaryUsesSelectedNodeAndItsDelay(t *testing.T) {
 	}
 	m.delays = map[string]core.DelayResult{"Hong Kong": {Milliseconds: 42}}
 	summary := m.traySummary()
-	if summary[0] != "Current node · Hong Kong" || summary[1] != "Routing mode · global" ||
-		summary[2] != "TUN on" || summary[3] != "Latency · 42 ms" {
+	if !summary.Active || summary.Lines[0] != "Current node · Hong Kong" || summary.Lines[1] != "Routing mode · global" ||
+		summary.Lines[2] != "TUN on" || summary.Lines[3] != "Latency · 42 ms" {
 		t.Fatalf("unexpected tray summary: %v", summary)
 	}
 
 	m.snapshot.status.State, m.snapshot.status.ResumeTUN, m.snapshot.overview.TUN = "Paused", true, false
 	summary = m.traySummary()
-	if summary[2] != "TUN paused" || summary[3] != "Latency · —" {
+	if summary.Active || summary.Lines[2] != "TUN paused" || summary.Lines[3] != "Latency · —" {
 		t.Fatalf("unexpected paused tray summary: %v", summary)
 	}
 }

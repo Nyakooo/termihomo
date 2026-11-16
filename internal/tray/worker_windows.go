@@ -13,19 +13,32 @@ import (
 //go:embed icon.ico
 var icon []byte
 
+//go:embed icon-gray.ico
+var grayIcon []byte
+
+var loadedIconPaths = make(map[bool]string, 2)
+
 func supported() bool { return true }
 
-func setIcon() {
-	// Give the icon a worker-owned path, then remove it after Windows loads it.
+func setIcon(active bool) {
+	// Systray caches the Windows icon handle by path after the first load.
+	if path, ok := loadedIconPaths[active]; ok {
+		_ = systray.SetIconFromFilePath(path)
+		return
+	}
+	data := grayIcon
+	if active {
+		data = icon
+	}
 	file, err := os.CreateTemp("", "termihomo-tray-*.ico")
 	if err != nil {
 		return
 	}
 	defer os.Remove(file.Name())
-	_, err = file.Write(icon)
+	_, err = file.Write(data)
 	closeErr := file.Close()
-	if err == nil && closeErr == nil {
-		_ = systray.SetIconFromFilePath(file.Name())
+	if err == nil && closeErr == nil && systray.SetIconFromFilePath(file.Name()) == nil {
+		loadedIconPaths[active] = file.Name()
 	}
 }
 

@@ -19,7 +19,6 @@ func HandleWorker(args []string) bool {
 	}
 
 	systray.Run(func() {
-		setIcon()
 		systray.SetTooltip("Termihomo")
 		systray.AddMenuItem("Termihomo", "").Disable()
 		systray.AddSeparator()
@@ -35,14 +34,23 @@ func HandleWorker(args []string) bool {
 
 func readSummaries(items [4]*systray.MenuItem) {
 	decoder := json.NewDecoder(os.Stdin)
+	var previous Summary
+	first := true
 	for {
 		var summary Summary
 		if err := decoder.Decode(&summary); err != nil {
 			break
 		}
-		for i, item := range items {
-			item.SetTitle(summary[i])
+		if first || summary.Active != previous.Active {
+			setIcon(summary.Active)
 		}
+		for i, item := range items {
+			if first || summary.Lines[i] != previous.Lines[i] {
+				item.SetTitle(summary.Lines[i])
+			}
+		}
+		previous = summary
+		first = false
 	}
 	systray.Quit()
 }

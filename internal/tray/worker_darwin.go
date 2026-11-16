@@ -15,6 +15,9 @@ import (
 //go:embed icon.png
 var icon []byte
 
+//go:embed icon-gray.png
+var grayIcon []byte
+
 const bundleInfo = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -26,7 +29,14 @@ const bundleInfo = `<?xml version="1.0" encoding="UTF-8"?>
 </dict></plist>`
 
 func supported() bool { return true }
-func setIcon()        { systray.SetIcon(icon) }
+
+func setIcon(active bool) {
+	if active {
+		systray.SetIcon(icon)
+	} else {
+		systray.SetIcon(grayIcon)
+	}
+}
 
 func workerCommand(executable string) (*exec.Cmd, func(), error) {
 	dir, err := os.MkdirTemp("", "termihomo-tray-")

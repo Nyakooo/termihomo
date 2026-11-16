@@ -12,8 +12,11 @@ import (
 
 const workerArg = "--tray-worker"
 
-// Summary holds the four localized detail lines shown below the project name.
-type Summary [4]string
+// Summary holds the proxy state and the localized detail lines shown in the tray.
+type Summary struct {
+	Active bool
+	Lines  [4]string
+}
 
 type update struct {
 	shown bool

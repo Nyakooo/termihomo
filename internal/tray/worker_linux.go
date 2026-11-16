@@ -16,6 +16,9 @@ import (
 //go:embed icon.png
 var icon []byte
 
+//go:embed icon-gray.png
+var grayIcon []byte
+
 func supported() bool {
 	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" ||
 		(os.Getenv("WAYLAND_DISPLAY") == "" && os.Getenv("DISPLAY") == "") {
@@ -35,7 +38,13 @@ func supported() bool {
 	return err == nil && property.Value() == true
 }
 
-func setIcon() { systray.SetIcon(icon) }
+func setIcon(active bool) {
+	if active {
+		systray.SetIcon(icon)
+	} else {
+		systray.SetIcon(grayIcon)
+	}
+}
 
 func workerCommand(executable string) (*exec.Cmd, func(), error) {
 	return directWorker(executable), func() {}, nil

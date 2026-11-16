@@ -33,9 +33,12 @@ func (m *model) traySummary() tray.Summary {
 		}
 	}
 	return tray.Summary{
-		m.lang.Text("Current node") + " · " + node,
-		m.lang.Text("Routing mode") + " · " + mode,
-		m.lang.Text(m.tunLabel()),
-		m.lang.Text("Latency") + " · " + delay,
+		Active: m.kernelActive(),
+		Lines: [4]string{
+			m.lang.Text("Current node") + " · " + node,
+			m.lang.Text("Routing mode") + " · " + mode,
+			m.lang.Text(m.tunLabel()),
+			m.lang.Text("Latency") + " · " + delay,
+		},
 	}
 }
