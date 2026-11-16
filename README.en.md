@@ -114,7 +114,7 @@ Launch the interactive interface:
 termihomo
 ~~~
 
-On first launch, Termihomo checks for the Mihomo core and downloads and verifies a supported build if it is not already installed.
+Install the Mihomo core before starting it: run <code>termihomo install</code>, or choose **Install / reinstall** from the TUI Core page. The installation flow downloads and verifies a supported build.
 
 A typical first-run workflow:
 
