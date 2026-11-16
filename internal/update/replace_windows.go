@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
@@ -29,17 +28,29 @@ func replaceExecutable(source, target string) error {
 	if err != nil {
 		return renameErr
 	}
-	current, err = filepath.EvalSymlinks(current)
-	if err != nil || !strings.EqualFold(current, target) {
+	running, err := os.Open(current)
+	if err != nil {
+		return renameErr
+	}
+	runningInfo, err := running.Stat()
+	running.Close()
+	if err != nil {
 		return renameErr
 	}
 
 	// Windows can keep the executable mapped until this process exits.
-	// Pass paths as data, and let the helper verify the original under the lock.
+	// Compare file identity because the running image can use an 8.3 path alias.
 	file, err := os.Open(target)
 	if err != nil {
-		return err
+		return renameErr
 	}
+	targetInfo, err := file.Stat()
+	if err != nil || !os.SameFile(runningInfo, targetInfo) {
+		file.Close()
+		return renameErr
+	}
+
+	// Pass paths as data, and let the helper verify the original under the lock.
 	hash := sha256.New()
 	_, err = io.Copy(hash, file)
 	file.Close()
