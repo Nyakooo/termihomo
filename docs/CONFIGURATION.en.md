@@ -28,6 +28,22 @@ Linux supports the XDG Base Directory environment variables. When set to absolut
 | `profiles/` | Saved profile library |
 | `overrides.yaml` | Configuration overrides managed by Termihomo |
 | `settings.yaml` | TUI refresh interval and key bindings |
+| `language` | Saved interface language |
+
+You can use `settings.yaml` to change the refresh interval and selected key bindings. For example:
+
+~~~yaml
+refresh-seconds: 3
+keys:
+  quit: q
+  help: "?"
+  refresh: r
+  search: /
+  sort: s
+  log-level: v
+~~~
+
+Key bindings must not conflict with reserved interface keys. Invalid settings are reported when the TUI starts.
 
 ### Data directory
 
@@ -44,6 +60,18 @@ Linux supports the XDG Base Directory environment variables. When set to absolut
 | `termihomo.log` | Termihomo application log |
 
 Mihomo runtime logs can be viewed from the TUI Logs page or with `termihomo logs`.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `XDG_CONFIG_HOME` | Parent directory for Linux configuration |
+| `XDG_DATA_HOME` | Parent directory for Linux application data |
+| `XDG_STATE_HOME` | Parent directory for Linux state and logs |
+| `TERMIHOMO_LANG` | Default language; accepted values are `en` and `zh-CN` |
+| `TERMIHOMO_INSTALL_DIR` | Override the installer's default destination |
+
+The `--lang` command-line option selects a language for the current launch. A language selected in the TUI is saved in the config directory.
 
 ## How configuration is applied
 
