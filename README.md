@@ -174,6 +174,7 @@ termihomo logs -f
 git clone https://github.com/Nyakooo/termihomo.git
 cd termihomo
 go test ./...
+mkdir -p bin
 go build -trimpath -o bin/termihomo ./cmd/termihomo
 ~~~
 
