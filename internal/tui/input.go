@@ -586,13 +586,7 @@ func (m *model) mouse(msg tea.MouseMsg) tea.Cmd {
 
 func (m *model) scroll(delta int) {
 	if m.page == logs {
-		count := 0
-		for _, entry := range m.logEntries {
-			if levelIndex(entry.Type) >= m.logLevel {
-				count++
-			}
-		}
-		m.logOffset = min(max(0, count-max(1, m.height-8)), max(0, m.logOffset-delta))
+		m.logOffset = min(m.maxLogOffset(), max(0, m.logOffset-delta))
 		return
 	}
 	var n int

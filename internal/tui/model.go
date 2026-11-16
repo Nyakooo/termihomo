@@ -53,7 +53,12 @@ type snapshot struct {
 
 type refreshMsg struct{}
 type trafficOffline struct{}
-type logsOffline struct{}
+type logStreamEvent struct {
+	entry   core.LogEntry
+	offline bool
+}
+
+type logBatch []logStreamEvent
 type clipboardMsg struct {
 	formID uint64
 	text   string
@@ -212,9 +217,19 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	go reconnect(ctx, func() error {
 		return manager.StreamTraffic(ctx, func(event core.Traffic) { program.Send(event) })
 	}, func() { program.Send(trafficOffline{}) })
+	logEvents := make(chan logStreamEvent, 256)
+	enqueueLog := func(event logStreamEvent) {
+		select {
+		case logEvents <- event:
+		case <-ctx.Done():
+		}
+	}
 	go reconnect(ctx, func() error {
-		return manager.StreamLogs(ctx, "debug", func(event core.LogEntry) { program.Send(event) })
-	}, func() { program.Send(logsOffline{}) })
+		return manager.StreamLogs(ctx, "debug", func(entry core.LogEntry) {
+			enqueueLog(logStreamEvent{entry: entry})
+		})
+	}, func() { enqueueLog(logStreamEvent{offline: true}) })
+	go forwardLogBatches(ctx, logEvents, program.Send)
 	_, err = program.Run()
 	return err
 }
@@ -238,6 +253,40 @@ func reconnect(ctx context.Context, connect func() error, offline func()) {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// Send at most one log-driven redraw per interval. Blocking the stream when
+// the buffer is full preserves event order, including DNS and disconnect events.
+func forwardLogBatches(ctx context.Context, events <-chan logStreamEvent, send func(tea.Msg)) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if count := len(events); count > 0 {
+				batch := make(logBatch, count)
+				for i := range batch {
+					batch[i] = <-events
+				}
+				send(batch)
+			}
+		}
+	}
+}
+
+func (m *model) appendLog(entry core.LogEntry) {
+	m.recordDNSEvent(entry)
+	m.logsLive = true
+	if m.logPaused {
+		return
+	}
+	if m.logOffset > 0 && levelIndex(entry.Type) >= m.logLevel {
+		m.logOffset++
+	}
+	m.logEntries = append(m.logEntries, entry)
+	m.logEntries = m.logEntries[max(0, len(m.logEntries)-200):]
 }
 
 func (m *model) Init() tea.Cmd {
@@ -291,6 +340,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.logOffset > 0 {
+			m.logOffset = min(m.logOffset, m.maxLogOffset())
+		}
 		m.hits = nil
 	case refreshMsg:
 		if !m.refreshing {
@@ -408,17 +460,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case trafficOffline:
 		m.trafficLive = false
 	case core.LogEntry:
-		m.recordDNSEvent(msg)
-		m.logsLive = true
-		if !m.logPaused {
-			if m.logOffset > 0 && levelIndex(msg.Type) >= m.logLevel {
-				m.logOffset = min(len(m.logEntries), m.logOffset+1)
-			}
-			m.logEntries = append(m.logEntries, msg)
-			m.logEntries = m.logEntries[max(0, len(m.logEntries)-200):]
+		m.appendLog(msg)
+		if m.logOffset > 0 {
+			m.logOffset = min(m.logOffset, m.maxLogOffset())
 		}
-	case logsOffline:
-		m.logsLive = false
+	case logBatch:
+		for _, event := range msg {
+			if event.offline {
+				m.logsLive = false
+			} else {
+				m.appendLog(event.entry)
+			}
+		}
+		if m.logOffset > 0 {
+			m.logOffset = min(m.logOffset, m.maxLogOffset())
+		}
 	case tea.PasteMsg:
 		if m.form != "" {
 			m.addInput(msg.Content)

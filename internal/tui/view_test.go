@@ -817,3 +817,68 @@ func TestQuitKeyReturnsFromExclusionEditorToList(t *testing.T) {
 		t.Fatal("expected Ctrl+C to quit")
 	}
 }
+
+func TestLogHistoryStaysInPlaceDuringBurst(t *testing.T) {
+	m := richModel()
+	m.page, m.height, m.logLevel, m.logEntries = logs, 24, levelIndex("info"), nil
+	initial := make(logBatch, 40)
+	for i := range initial {
+		initial[i].entry = core.LogEntry{Type: "info", Payload: "history-" + time.Unix(int64(i), 0).UTC().Format("15:04:05")}
+	}
+	m.Update(initial)
+	m.scroll(-7)
+	before := m.logsPage(m.height - 4)
+	m.Update(logBatch{
+		{entry: core.LogEntry{Type: "debug", Payload: "hidden"}},
+		{entry: core.LogEntry{Type: "info", Payload: "newest"}},
+	})
+	if after := m.logsPage(m.height - 4); !slices.Equal(before, after) {
+		t.Fatal("new log events moved the historical viewport")
+	}
+	m.scroll(100)
+	if tail := strings.Join(m.logsPage(m.height-4), "\n"); !strings.Contains(tail, "newest") || strings.Contains(tail, "hidden") {
+		t.Fatal("returning to the tail did not show the newest matching event")
+	}
+}
+
+func TestLogHistoryClampsToRetainedRows(t *testing.T) {
+	m := richModel()
+	m.page, m.height, m.logLevel, m.logEntries = logs, 24, levelIndex("info"), nil
+	initial := make(logBatch, 200)
+	for i := range initial {
+		initial[i].entry = core.LogEntry{Type: "debug", Payload: "hidden"}
+		if i%2 == 0 {
+			initial[i].entry.Type, initial[i].entry.Payload = "info", "visible"
+		}
+	}
+	m.Update(initial)
+	m.scroll(-1_000)
+	if want := 100 - 18; m.logOffset != want {
+		t.Fatalf("oldest offset = %d, want %d", m.logOffset, want)
+	}
+	m.Update(logBatch{
+		{entry: core.LogEntry{Type: "debug", Payload: "hidden"}},
+		{entry: core.LogEntry{Type: "info", Payload: "visible"}},
+		{offline: true},
+	})
+	if m.logOffset != m.maxLogOffset() || len(m.logEntries) != 200 || m.logsLive {
+		t.Fatalf("after rotation: offset=%d entries=%d live=%t", m.logOffset, len(m.logEntries), m.logsLive)
+	}
+	m.Update(tea.WindowSizeMsg{Width: m.width, Height: 120})
+	if m.logOffset != 0 {
+		t.Fatalf("offset after growing viewport = %d", m.logOffset)
+	}
+}
+
+func TestLogBatchFeedsDNSWhileLogsPaused(t *testing.T) {
+	m := richModel()
+	m.logPaused, m.logEntries = true, nil
+	now := time.Now()
+	m.Update(logBatch{
+		{entry: core.LogEntry{Time: now, DNS: &core.DNSEvent{Domain: "batch.example", Type: "A", Started: true}}},
+		{entry: core.LogEntry{Time: now.Add(time.Millisecond), DNS: &core.DNSEvent{Domain: "batch.example", Type: "A", Result: "192.0.2.1"}}},
+	})
+	if len(m.logEntries) != 0 || len(m.visibleDNSRows()) != 1 {
+		t.Fatal("paused logs should still process DNS events in a batch")
+	}
+}

@@ -1394,24 +1394,39 @@ func (m *model) logLine(e core.LogEntry) string {
 	return s.faint(stamp+" ") + s.fg(levelHex(s, lv), label) + s.fg(hex, fitPlain(safe(e.Payload), payloadW))
 }
 
-func (m *model) logsPage(height int) []string {
-	s := m.style
-	var rows []string
-	for _, e := range m.logEntries {
-		if levelIndex(e.Type) >= m.logLevel {
-			rows = append(rows, m.logLine(e))
+func logViewportRows(bodyHeight int) int {
+	return max(1, bodyHeight-2)
+}
+
+func (m *model) maxLogOffset() int {
+	count := 0
+	for _, entry := range m.logEntries {
+		if levelIndex(entry.Type) >= m.logLevel {
+			count++
 		}
 	}
-	inner := max(1, height-2)
-	filtered := len(rows)
-	end := len(rows) - min(m.logOffset, max(0, len(rows)-inner))
-	rows = rows[max(0, end-inner):end]
-	// Keep a tail view: the newest line stays on the bottom row.
-	if pad := inner - len(rows); pad > 0 {
-		rows = append(make([]string, pad), rows...)
+	return max(0, count-logViewportRows(m.height-4))
+}
+
+func (m *model) logsPage(height int) []string {
+	s := m.style
+	rows := make([]string, logViewportRows(height))
+	row, skip := len(rows)-1, m.logOffset
+	// Fill from the bottom and format only the entries on screen.
+	for i := len(m.logEntries) - 1; i >= 0 && row >= 0; i-- {
+		entry := m.logEntries[i]
+		if levelIndex(entry.Type) < m.logLevel {
+			continue
+		}
+		if skip > 0 {
+			skip--
+			continue
+		}
+		rows[row] = m.logLine(entry)
+		row--
 	}
-	if filtered == 0 {
-		rows[len(rows)-1] = s.faint(m.lang.Text("Waiting for log events"))
+	if row == len(rows)-1 {
+		rows[row] = s.faint(m.lang.Text("Waiting for log events"))
 	}
 	title := m.lang.Text("Mihomo logs")
 	if m.logOffset > 0 {
