@@ -63,7 +63,7 @@ Core Manager 是应用与 Mihomo 之间的管理边界。TUI 和 CLI 不直接�
 
 Termihomo 将 Mihomo 作为独立的后台进程管理：
 
-1. 检查本地内核版本；需要时下载并校验内核。
+1. 通过 <code>termihomo install</code> 或 TUI 的 Core 页面安装内核；安装流程会下载并校验受支持的版本。
 2. 读取当前配置档案和应用覆盖设置。
 3. 生成托管配置，并调用 Mihomo 校验配置。
 4. 启动 Mihomo 进程，通过本地 Controller API 获取运行状态。
