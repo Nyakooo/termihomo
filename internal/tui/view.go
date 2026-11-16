@@ -376,8 +376,6 @@ func (m *model) controlText(c control) string {
 		key = "Ctrl+A"
 	case "ctrl+r":
 		key = "Ctrl+R"
-	case "ctrl+v":
-		key = "Ctrl+V"
 	}
 	label := m.lang.Text(c.label)
 	accent := s.p.acc
@@ -615,7 +613,7 @@ func (m *model) overlayModal(body []string, height int) []string {
 			}
 			inputRow = len(lines)
 			lines = append(lines, m.style.accent("› ")+input)
-			buttons = []control{{"enter", "Save"}, {"esc", "Cancel"}, {"ctrl+v", "Paste"}}
+			buttons = []control{{"enter", "Save"}, {"esc", "Cancel"}}
 		}
 	case m.services.dialog:
 		title = "Service status"
@@ -771,7 +769,6 @@ func (m *model) helpLines() []string {
 		row(k("search"), m.lang.Text("Search proxies, groups, rules or connections")),
 		row(k("sort")+" / t / ↵", m.lang.Text("Sort / test focused node / apply node")),
 		row("↵ / Esc", m.lang.Text("Open details / go back")),
-		row("Ctrl+V", m.lang.Text("Paste from clipboard into a form")),
 		row(m.lang.Text("Dashboard"), m.lang.Text("a start / stop")),
 		row("f / e", m.lang.Text("Dashboard service check / list")),
 		row(m.lang.Text("Profile"), m.lang.Text("a add · i import · u update")),
