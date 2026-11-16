@@ -27,11 +27,11 @@ type menuSection struct {
 }
 
 var menuSections = []menuSection{
-	{"Dashboard", "⊞", []page{dashboard}},
-	{"Proxy menu", "⇆", []page{proxies}},
+	{"Dashboard", "▦", []page{dashboard}},
+	{"Proxy menu", "▣", []page{proxies}},
 	{"Profile", "▤", []page{profiles}},
-	{"Requests", "◷", []page{connectionsPage}},
-	{"Tools", "⚙", []page{generalPage, languagePage, networkPage, corePage, dnsPage, logs}},
+	{"Requests", "▧", []page{connectionsPage}},
+	{"Tools", "▩", []page{generalPage, languagePage, networkPage, corePage, dnsPage, logs}},
 }
 
 func (m *model) sidebarWidth() int {
