@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 347 203" role="img" aria-labelledby="title">
+  <title id="title">Termihomo</title>
+  <defs>
+    <linearGradient id="orbit" x1="68" y1="165" x2="282" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18b8f2"/>
+      <stop offset="0.52" stop-color="#3478ff"/>
+      <stop offset="1" stop-color="#713df2"/>
+    </linearGradient>
+  </defs>
+  <rect width="347" height="203" rx="8" fill="#0b0f1b"/>
+  <path d="M 70 161 C 85 184, 130 188, 177 180 C 224 172, 265 141, 279 111 C 286 96, 275 91, 253 91"
+        fill="none" stroke="url(#orbit)" stroke-width="15" stroke-linecap="round"/>
+  <path d="M 92 153 L 117.5 50.5 Q 118.4 46.5 122 49 L 158 75.5 Q 178.5 72 200.5 73.5 L 226.5 49.5 Q 229.5 46.8 231 51 L 248.5 123.5"
+        fill="none" stroke="#f7f8fc" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 150 119.5 Q 165 124.5 183.5 126.5 Q 184.5 135.5 171 136 Q 157 135.5 150 119.5 Z" fill="#f7f8fc"/>
+  <path d="M 205 126.5 Q 218 123.5 231 117.5 Q 230 133.5 217.5 136 Q 207 136 205 126.5 Z" fill="#f7f8fc"/>
+</svg>

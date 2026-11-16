@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/termihomo-logo.jpg" alt="Termihomo logo" width="240" />
+  <img src="assets/termihomo-logo.svg" alt="Termihomo logo" width="240" />
 </p>
 
 <h1 align="center">Termihomo</h1>
