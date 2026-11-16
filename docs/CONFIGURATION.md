@@ -28,6 +28,22 @@ Linux 支持 XDG Base Directory 环境变量。设置为绝对路径时，Termih
 | `profiles/` | 已保存的配置档案库 |
 | `overrides.yaml` | Termihomo 管理的配置覆盖项 |
 | `settings.yaml` | TUI 刷新间隔和快捷键设置 |
+| `language` | 保存的界面语言 |
+
+`settings.yaml` 可用于调整刷新间隔和部分快捷键。例如：
+
+~~~yaml
+refresh-seconds: 3
+keys:
+  quit: q
+  help: "?"
+  refresh: r
+  search: /
+  sort: s
+  log-level: v
+~~~
+
+快捷键不能与界面保留按键冲突；无效设置会在启动 TUI 时报告。
 
 ### 数据目录
 
@@ -44,6 +60,18 @@ Linux 支持 XDG Base Directory 环境变量。设置为绝对路径时，Termih
 | `termihomo.log` | Termihomo 应用日志 |
 
 Mihomo 自身的运行日志可通过 TUI 的 Logs 页面或 `termihomo logs` 查看。
+
+## 环境变量
+
+| 变量 | 作用 |
+| --- | --- |
+| `XDG_CONFIG_HOME` | Linux 配置目录的父目录 |
+| `XDG_DATA_HOME` | Linux 数据目录的父目录 |
+| `XDG_STATE_HOME` | Linux 状态与日志目录的父目录 |
+| `TERMIHOMO_LANG` | 设置默认语言，可用值为 `en` 或 `zh-CN` |
+| `TERMIHOMO_INSTALL_DIR` | 覆盖安装脚本的默认安装位置 |
+
+命令行的 `--lang` 可为当前启动指定语言；TUI 中选择的语言会保存在配置目录中。
 
 ## 配置如何生效
 
