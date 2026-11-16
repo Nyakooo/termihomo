@@ -73,8 +73,12 @@ Press <code>?</code> inside the application to view the current key bindings. Th
 
 ### Linux / macOS
 
+Download the install script with `curl`, then run it with your shell:
+
 ~~~sh
-installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && printf '%s\n' "$installer" | sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh
+sh /tmp/termihomo-install.sh
+rm -f /tmp/termihomo-install.sh
 ~~~
 
 Linux and macOS install to <code>~/.local/bin</code> by default. Add <code>~/.local/bin</code> to your shell's <code>PATH</code> if needed.
