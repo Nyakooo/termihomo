@@ -22,16 +22,15 @@ const minRows = 24
 
 type menuSection struct {
 	label string
-	icon  string
 	pages []page
 }
 
 var menuSections = []menuSection{
-	{"Dashboard", "▦", []page{dashboard}},
-	{"Proxy menu", "▣", []page{proxies}},
-	{"Profile", "▤", []page{profiles}},
-	{"Requests", "▧", []page{connectionsPage}},
-	{"Tools", "▩", []page{generalPage, languagePage, networkPage, corePage, dnsPage, logs}},
+	{"Dashboard", []page{dashboard}},
+	{"Proxy menu", []page{proxies}},
+	{"Profile", []page{profiles}},
+	{"Requests", []page{connectionsPage}},
+	{"Tools", []page{generalPage, languagePage, networkPage, corePage, dnsPage, logs}},
 }
 
 func (m *model) sidebarWidth() int {
@@ -40,7 +39,7 @@ func (m *model) sidebarWidth() int {
 	}
 	w := width(" TERMIHOMO") + 1
 	for _, section := range menuSections {
-		w = max(w, width(m.lang.Text(section.label))+9)
+		w = max(w, width(m.lang.Text(section.label))+7)
 	}
 	return w
 }
@@ -134,7 +133,7 @@ func (m *model) sidebar(w int, clickable bool) []string {
 	add := func(text string, active bool) {
 		line := fit(clip(text, w-1), w-1)
 		if active {
-			line = s.bold(s.accent(line))
+			line = s.accent(line)
 		} else {
 			line = s.fg(s.p.dim, line)
 		}
@@ -162,10 +161,15 @@ func (m *model) sidebar(w int, clickable bool) []string {
 	for i, section := range menuSections {
 		active := slices.Contains(section.pages, m.page)
 		marker := " "
+		label := ""
+		if w != 5 {
+			label = m.lang.Text(section.label)
+		}
 		if active {
 			marker = "▏"
+			label = s.bold(label)
 		}
-		link(fmt.Sprintf("%s%d %s%s", marker, i+1, fit(section.icon, 2), m.lang.Text(section.label)), section.pages[0], active, 1, 1)
+		link(fmt.Sprintf("%s%d %s", marker, i+1, label), section.pages[0], active, 1, 1)
 	}
 	for len(lines) < m.height {
 		add("", false)
@@ -296,8 +300,7 @@ func (m *model) statusState() string {
 func (m *model) topbar() string {
 	s := m.style
 	st := m.snapshot.status
-	brand := s.bold(s.accent(" ◈ TERMIHOMO "))
-	left := brand + " " + s.faint(orDash(st.Installed))
+	left := " " + s.faint(orDash(st.Installed))
 	state := m.statusState()
 	pills := []string{s.chip(m.lang.Text(state), stateHex(s, state))}
 	if st.State == "Running" {
