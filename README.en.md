@@ -198,7 +198,7 @@ Termihomo is an independent management tool and is not affiliated with or offici
 
 ## Project status
 
-Termihomo is under active development. Features, commands, and configuration formats may change between versions. Check the release notes before upgrading. Bug reports and improvement suggestions are welcome through GitHub Issues.
+Termihomo is under active development. Features, commands, and configuration formats may change between versions. Before using Termihomo, please check the Release Notes for the corresponding version.
 
 ---
 
