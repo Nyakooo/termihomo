@@ -27,7 +27,7 @@ type Summary struct {
 	Active  bool
 	Running bool
 	CanTest bool
-	Lines   [4]string
+	Lines   [5]string
 }
 
 type ReadSummary func(ctx context.Context, test bool, refresh func()) Summary
@@ -37,6 +37,7 @@ type DesktopState struct {
 	Pause     func(context.Context) error
 	CycleMode func(context.Context) error
 	ToggleTUN func(context.Context) error
+	ToggleLAN func(context.Context) error
 }
 
 func Available() bool { return supported() }

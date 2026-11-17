@@ -943,7 +943,7 @@ func TestLogBatchFeedsDNSWhileLogsPaused(t *testing.T) {
 func TestTraySummaryUsesSelectedNodeAndItsDelay(t *testing.T) {
 	m := richModel()
 	m.snapshot.status.State = "Running"
-	m.snapshot.overview = core.Overview{Mode: "global", TUN: true}
+	m.snapshot.overview = core.Overview{Mode: "global", TUN: true, LAN: true}
 	m.snapshot.proxies = []core.Proxy{
 		{Name: "GLOBAL", Type: "Selector", Now: "Hong Kong"},
 		{Name: "Hong Kong", Type: "Shadowsocks"},
@@ -951,13 +951,14 @@ func TestTraySummaryUsesSelectedNodeAndItsDelay(t *testing.T) {
 	m.delays = map[string]core.DelayResult{"Hong Kong": {Milliseconds: 42}}
 	summary := m.traySummary()
 	if !summary.Active || summary.Lines[0] != "Current node · Hong Kong" || summary.Lines[1] != "Routing mode · global" ||
-		summary.Lines[2] != "TUN on" || summary.Lines[3] != "Latency · 42 ms" {
+		summary.Lines[2] != "TUN on" || summary.Lines[3] != "LAN proxy on" || summary.Lines[4] != "Latency · 42 ms" {
 		t.Fatalf("unexpected tray summary: %v", summary)
 	}
 
 	m.snapshot.status.State, m.snapshot.status.ResumeTUN, m.snapshot.overview.TUN = "Paused", true, false
+	m.snapshot.overview.LAN = false
 	summary = m.traySummary()
-	if summary.Active || summary.Lines[2] != "TUN paused" || summary.Lines[3] != "Latency · —" {
+	if summary.Active || summary.Lines[2] != "TUN paused" || summary.Lines[3] != "LAN proxy off" || summary.Lines[4] != "Latency · —" {
 		t.Fatalf("unexpected paused tray summary: %v", summary)
 	}
 }

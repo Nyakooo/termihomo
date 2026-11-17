@@ -71,10 +71,11 @@ Enable **Tools → General → System tray** to show the tray, which is off by d
 | Current node | Open the node list or switch the existing interface to it |
 | Routing mode | Cycle through rule, global, and direct |
 | TUN | Toggle TUN using the platform's permission requirements |
+| LAN proxy | Toggle access to the proxy port from devices on the local network |
 | Latency | Test the current node immediately. The tray also tests the selected proxy node once per minute by default |
 | Quit | Close the proxy, tray, and open Termihomo interfaces while keeping the tray preference |
 
-The menu shows the latest node, routing mode, TUN state, and latency.
+The menu shows the latest status after each action.
 
 ## Supported platforms
 

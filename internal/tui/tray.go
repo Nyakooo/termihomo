@@ -114,7 +114,7 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 			summary := m.traySummary()
 			summary.CanTest = node != "" && pending == nil
 			if pending != nil {
-				summary.Lines[3] = m.lang.Text("Latency") + " · " + m.lang.Text("Testing…")
+				summary.Lines[4] = m.lang.Text("Latency") + " · " + m.lang.Text("Testing…")
 			}
 			return summary
 		},
@@ -139,6 +139,13 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 			}
 			return manager.SetTUN(ctx, !overview.TUN && !overview.TUNConfigured)
 		},
+		ToggleLAN: func(ctx context.Context) error {
+			overview, err := activeOverview(ctx)
+			if err != nil {
+				return err
+			}
+			return manager.SetLAN(ctx, !overview.LAN)
+		},
 		Pause: func(ctx context.Context) error {
 			status, err := manager.Status(ctx)
 			if err != nil {
@@ -155,6 +162,10 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 func (m *model) traySummary() tray.Summary {
 	node, delay := "—", "—"
 	mode := orDash(m.lang.Text(m.snapshot.overview.Mode))
+	lan := "LAN proxy off"
+	if m.snapshot.overview.LAN {
+		lan = "LAN proxy on"
+	}
 	if m.snapshot.status.State == "Running" {
 		selected := serviceNode(m.snapshot)
 		node = orDash(clip(safe(selected), 120))
@@ -167,10 +178,11 @@ func (m *model) traySummary() tray.Summary {
 	return tray.Summary{
 		Active:  m.kernelActive(),
 		Running: m.snapshot.status.State == "Running",
-		Lines: [4]string{
+		Lines: [5]string{
 			m.lang.Text("Current node") + " · " + node,
 			m.lang.Text("Routing mode") + " · " + mode,
 			m.lang.Text(m.tunLabel()),
+			m.lang.Text(lan),
 			m.lang.Text("Latency") + " · " + delay,
 		},
 	}

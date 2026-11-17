@@ -46,7 +46,7 @@ func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
 		systray.SetTooltip("Termihomo")
 		title := systray.AddMenuItem("Termihomo", "")
 		systray.AddSeparator()
-		var items [4]*systray.MenuItem
+		var items [5]*systray.MenuItem
 		for i := range items {
 			items[i] = systray.AddMenuItem("—", "")
 			if i > 0 {
@@ -98,6 +98,9 @@ func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
 					apply(desktop.ToggleTUN)
 					requestRefresh()
 				case <-items[3].ClickedCh:
+					apply(desktop.ToggleLAN)
+					requestRefresh()
+				case <-items[4].ClickedCh:
 					feedback.Hide()
 					select {
 					case test <- struct{}{}:
@@ -182,7 +185,7 @@ func waitForInterface(ctx context.Context, paths platform.Paths) error {
 	}
 }
 
-func updateSummaries(ctx context.Context, items [4]*systray.MenuItem, read ReadSummary, refresh, test <-chan struct{}, requestRefresh func(), nodeMenu *sync.Mutex) {
+func updateSummaries(ctx context.Context, items [5]*systray.MenuItem, read ReadSummary, refresh, test <-chan struct{}, requestRefresh func(), nodeMenu *sync.Mutex) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var previous Summary
@@ -195,7 +198,7 @@ func updateSummaries(ctx context.Context, items [4]*systray.MenuItem, read ReadS
 			return
 		}
 		if first || summary.Running != previous.Running {
-			for _, item := range items[1:3] {
+			for _, item := range items[1:4] {
 				if summary.Running {
 					item.Enable()
 				} else {
@@ -205,9 +208,9 @@ func updateSummaries(ctx context.Context, items [4]*systray.MenuItem, read ReadS
 		}
 		if first || summary.CanTest != previous.CanTest {
 			if summary.CanTest {
-				items[3].Enable()
+				items[4].Enable()
 			} else {
-				items[3].Disable()
+				items[4].Disable()
 			}
 		}
 		if first || summary.Active != previous.Active {
