@@ -124,7 +124,7 @@ type formHistory struct {
 type model struct {
 	trayAvailable       bool
 	trayExitToken       string
-	trayExitPending     bool
+	exitPending         bool
 	compactTerminal     bool
 	dnsFeed             dnsFeed
 	toolField           core.ToolField
@@ -186,6 +186,7 @@ type model struct {
 	profileFrame             int
 	lifecycle                string
 	busy                     bool
+	cancelStartupInstall     context.CancelFunc
 	refreshing               bool
 	refreshAgain             bool
 	loaded                   bool
@@ -311,7 +312,12 @@ func (m *model) appendLog(entry core.LogEntry) {
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.refresh(), m.tick()}
 	if !m.manager.KernelPresent() {
-		cmds = append(cmds, m.act(m.lang.Text("Install Mihomo"), func() error { return m.manager.Install(m.ctx) }))
+		ctx, cancel := context.WithCancel(m.ctx)
+		m.cancelStartupInstall = cancel
+		cmds = append(cmds, m.act(m.lang.Text("Install Mihomo"), func() error {
+			defer cancel()
+			return m.manager.Install(ctx)
+		}))
 		m.feedback = m.lang.Text("Installing Mihomo") + "…"
 	}
 	return tea.Batch(cmds...)
@@ -358,10 +364,11 @@ func (m *model) act(label string, run func() error) tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case trayExitMsg:
-		m.trayExitPending = true
+		m.exitPending = true
 		if !m.busy {
 			return m, tea.Quit
 		}
+		m.cancelInstallForExit()
 	case trayNodesMsg:
 		m.closeForm()
 		m.confirm, m.help, m.services.dialog = nil, false, false
@@ -464,7 +471,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case operation:
 		m.profileUpdating, m.cardUpdating = false, false
 		m.busy = false
-		if m.trayExitPending {
+		m.cancelStartupInstall = nil
+		if m.exitPending {
 			return m, tea.Quit
 		}
 		m.lifecycle = ""

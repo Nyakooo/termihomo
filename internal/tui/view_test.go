@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Nyakooo/termihomo/internal/core"
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"github.com/Nyakooo/termihomo/internal/platform"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -487,6 +488,45 @@ func TestStoppedProxyPageKeepsOnlyTheMatchingProfile(t *testing.T) {
 	screen = ansi.Strip(m.View().Content)
 	if !strings.Contains(screen, "New node") || strings.Contains(screen, "Shadowsocks") {
 		t.Fatal("the offline page should show the newly activated profile only")
+	}
+}
+
+func TestQuitCancelsStartupInstall(t *testing.T) {
+	for _, key := range []string{"q", "ctrl+c", "tray"} {
+		t.Run(key, func(t *testing.T) {
+			m := richModel()
+			m.ctx = t.Context()
+			dir := t.TempDir()
+			m.manager.Paths = platform.Paths{
+				Config: filepath.Join(dir, "config"),
+				Data:   filepath.Join(dir, "data"),
+				Logs:   filepath.Join(dir, "state", "logs"),
+			}
+			cmds := m.Init()().(tea.BatchMsg)
+			if len(cmds) != 3 || !m.busy {
+				t.Fatal("startup should install the missing kernel")
+			}
+			var quit tea.Cmd
+			if key == "tray" {
+				_, quit = m.Update(trayExitMsg{})
+			} else {
+				quit = m.handleKey(key, "")
+			}
+			if quit != nil || m.feedback != "Cancelling Mihomo installation…" {
+				t.Fatalf("exit should cancel the installation and wait for cleanup, feedback=%q", m.feedback)
+			}
+			result := cmds[2]().(operation)
+			if !errors.Is(result.err, context.Canceled) {
+				t.Fatalf("expected installation cancellation, got %v", result.err)
+			}
+			_, quit = m.Update(result)
+			if quit == nil {
+				t.Fatal("expected quit after installation cleanup")
+			}
+			if _, ok := quit().(tea.QuitMsg); !ok {
+				t.Fatal("expected a quit message")
+			}
+		})
 	}
 }
 

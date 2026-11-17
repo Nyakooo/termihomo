@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,6 +48,9 @@ func (m Manager) KernelPresent() bool {
 }
 
 func (m Manager) Install(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := m.Paths.Ensure(); err != nil {
 		return err
 	}
@@ -65,40 +69,18 @@ func (m Manager) Install(ctx context.Context) error {
 	if asset == "" {
 		return i18n.Message("no Mihomo release for this architecture")
 	}
-	asset = fmt.Sprintf("https://github.com/MetaCubeX/mihomo/releases/download/%s/%s", Version, asset)
-	client := &http.Client{Timeout: 2 * time.Minute}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return i18n.Message("could not download Mihomo from the official release")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return i18n.Errorf("download Mihomo: HTTP %d", resp.StatusCode)
-	}
-
+	official := fmt.Sprintf("https://github.com/MetaCubeX/mihomo/releases/download/%s/%s", Version, asset)
+	sources := []string{official, "https://gh-proxy.com/" + official, "https://ghproxy.net/" + official}
 	dir := filepath.Dir(m.binary())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	archive, err := os.CreateTemp(dir, ".mihomo-archive-*")
+	archive, size, err := downloadKernelArchive(ctx, &http.Client{Timeout: 2 * time.Minute}, sources, dir, digest)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(archive.Name())
 	defer archive.Close()
-	const archiveLimit = 64 << 20
-	hash := sha256.New()
-	size, err := io.Copy(io.MultiWriter(archive, hash), io.LimitReader(resp.Body, archiveLimit+1))
-	if err != nil {
-		return err
-	}
-	if size > archiveLimit || hex.EncodeToString(hash.Sum(nil)) != digest {
-		return i18n.Message("Mihomo archive size or SHA-256 verification failed")
-	}
 	payload, err := kernelPayload(archive, size, filepath.Ext(asset) == ".zip")
 	if err != nil {
 		return err
@@ -124,7 +106,98 @@ func (m Manager) Install(ctx context.Context) error {
 	if err := bin.Close(); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return os.Rename(bin.Name(), m.binary())
+}
+
+// Race complete, verified downloads so a fast response with an invalid or slow
+// body cannot prevent another source from winning.
+func downloadKernelArchive(ctx context.Context, client *http.Client, sources []string, dir, digest string) (*os.File, int64, error) {
+	downloadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		archive *os.File
+		size    int64
+		err     error
+	}
+	results := make(chan result)
+	for _, source := range sources {
+		go func() {
+			archive, size, err := fetchKernelArchive(downloadCtx, client, source, dir, digest)
+			results <- result{archive, size, err}
+		}()
+	}
+
+	var winner result
+	var failures []string
+	for range sources {
+		attempt := <-results
+		if attempt.err != nil {
+			failures = append(failures, attempt.err.Error())
+		} else if winner.archive == nil {
+			winner = attempt
+			cancel()
+		} else {
+			attempt.archive.Close()
+			os.Remove(attempt.archive.Name())
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		if winner.archive != nil {
+			winner.archive.Close()
+			os.Remove(winner.archive.Name())
+		}
+		return nil, 0, err
+	}
+	if winner.archive == nil {
+		return nil, 0, i18n.Errorf("could not download Mihomo from any source: %s", strings.Join(failures, " | "))
+	}
+	return winner.archive, winner.size, nil
+}
+
+func fetchKernelArchive(ctx context.Context, client *http.Client, source, dir, digest string) (*os.File, int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			err = requestErr.Err
+		}
+		return nil, 0, fmt.Errorf("%s: %w", req.URL.Host, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("%s: HTTP %d", req.URL.Host, resp.StatusCode)
+	}
+
+	archive, err := os.CreateTemp(dir, ".mihomo-archive-*")
+	if err != nil {
+		return nil, 0, err
+	}
+	verified := false
+	defer func() {
+		if !verified {
+			archive.Close()
+			os.Remove(archive.Name())
+		}
+	}()
+	const archiveLimit = 64 << 20
+	hash := sha256.New()
+	size, err := io.Copy(io.MultiWriter(archive, hash), io.LimitReader(resp.Body, archiveLimit+1))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%s: %w", req.URL.Host, err)
+	}
+	if size > archiveLimit || hex.EncodeToString(hash.Sum(nil)) != digest {
+		return nil, 0, fmt.Errorf("%s: %w", req.URL.Host, i18n.Message("Mihomo archive size or SHA-256 verification failed"))
+	}
+	verified = true
+	return archive, size, nil
 }
 
 func kernelAsset(goos, goarch string) (string, string) {

@@ -21,6 +21,16 @@ func (m *model) modalOpen() bool {
 		(m.page == connectionsPage && m.requests.menu != "")
 }
 
+func (m *model) cancelInstallForExit() bool {
+	if m.cancelStartupInstall == nil {
+		return false
+	}
+	m.exitPending = true
+	m.feedback = m.lang.Text("Cancelling Mihomo installation") + "…"
+	m.cancelStartupInstall()
+	return true
+}
+
 func (m *model) handleKey(key, value string) tea.Cmd {
 	quit := m.settings.key("quit")
 	exclusions := m.page == networkPage && m.showProxyExclusions
@@ -29,7 +39,9 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 	}
 	if key == "ctrl+c" || key == quit {
 		if m.busy {
-			m.feedback = m.lang.Text("Wait for the current operation to finish")
+			if !m.cancelInstallForExit() {
+				m.feedback = m.lang.Text("Wait for the current operation to finish")
+			}
 			return nil
 		}
 		if m.cancelTests != nil {
