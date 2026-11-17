@@ -20,7 +20,7 @@ type dnsQueryDone struct {
 
 func (m *model) generalToolFields() []core.ToolField {
 	fields := core.GeneralToolFields
-	if m.tray == nil && fields[len(fields)-1].Key == core.SystemTrayKey {
+	if !m.trayAvailable && fields[len(fields)-1].Key == core.SystemTrayKey {
 		fields = fields[:len(fields)-1]
 	}
 	return fields
@@ -47,23 +47,12 @@ func (m *model) toolPage(height int) []string {
 		entries = append(entries, fit(clip(m.lang.Text(field.Label), labelWidth-1), labelWidth)+value)
 	}
 	header := []string{
-		m.style.dim(m.lang.Text("Enter edit · d reset")),
-		m.style.dim(m.lang.Text("Core settings apply after restart")),
+		m.style.dim(m.lang.Text("Enter toggle or edit · d reset")),
 	}
 	if m.snapshot.toolSettingsErr != nil {
 		header = append(header, m.style.err(m.lang.Error(m.snapshot.toolSettingsErr)))
 	}
-	if m.page == generalPage && m.snapshot.status.Proxy != "" {
-		header = append(header, m.lang.Text("Proxy")+" "+m.snapshot.status.Proxy+" · "+m.lang.Text("LAN proxy")+" "+m.boolMark(m.snapshot.overview.LAN))
-	}
 	return m.listPanel(m.lang.Text("General"), header, entries, m.cursor, height, 0, m.width, "", hitRow)
-}
-
-func (m *model) editToolField() {
-	fields := m.generalToolFields()
-	field := fields[min(m.cursor, len(fields)-1)]
-	m.toolField = field
-	m.openForm(field.Label, m.snapshot.toolSettings[field.Key])
 }
 
 func (m *model) toolPageKey(key string) tea.Cmd {
@@ -71,13 +60,19 @@ func (m *model) toolPageKey(key string) tea.Cmd {
 	case "enter":
 		fields := m.generalToolFields()
 		field := fields[min(m.cursor, len(fields)-1)]
-		if field.Key == core.SystemTrayKey {
-			enabled := strconv.FormatBool(m.snapshot.toolSettings[field.Key] != "true")
+		value := m.snapshot.toolSettings[field.Key]
+		if field.Type == "bool" {
+			if value == "Unavailable" {
+				m.feedback = m.lang.Text("Unavailable")
+				return nil
+			}
+			enabled := strconv.FormatBool(value != "true")
 			return m.act(m.lang.Text(field.Label), func() error {
 				return m.manager.SetToolSetting(m.ctx, field.Key, enabled)
 			})
 		}
-		m.editToolField()
+		m.toolField = field
+		m.openForm(field.Label, value)
 	case "d":
 		fields := m.generalToolFields()
 		field := fields[min(m.cursor, len(fields)-1)]

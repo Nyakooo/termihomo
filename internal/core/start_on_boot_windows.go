@@ -136,3 +136,24 @@ func (m Manager) writeBootTask(sid string) (string, error) {
 	}
 	return file.Name(), nil
 }
+
+func (m Manager) removeBootRegistration(ctx context.Context) error {
+	name, _, err := bootTask()
+	if err != nil {
+		return err
+	}
+	if _, err := taskCommand(ctx, "/Query", "/TN", name); err != nil {
+		if _, missing := err.(*exec.ExitError); missing && ctx.Err() == nil {
+			return nil
+		}
+		return err
+	}
+	if out, err := taskCommand(ctx, "/Delete", "/F", "/TN", name); err != nil {
+		detail := strings.TrimSpace(bootTaskOutput(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return i18n.Errorf("Could not change startup before login: %s", detail)
+	}
+	return nil
+}

@@ -61,7 +61,20 @@ The TUI is organized into focused sections:
 
 Press <code>?</code> inside the application to view the current key bindings. The layout adapts to terminal size; a window of at least 80×24 is recommended.
 
-In desktop sessions with a tray host, enable or disable the system tray under **Tools → General → System tray**. It is off by default and shows the current node, routing mode, TUN status, and latest available node latency.
+### System tray
+
+Enable **Tools → General → System tray** to show the tray, which is off by default. The tray stays running when the terminal interface closes. The TUI and CLI also work on servers without a desktop or tray host.
+
+| Menu item | Action |
+| --- | --- |
+| Termihomo | Open the terminal interface if it is not already open |
+| Current node | Open the node list or switch the existing interface to it |
+| Routing mode | Cycle through rule, global, and direct |
+| TUN | Toggle TUN using the platform's permission requirements |
+| Latency | Test the current node immediately. The tray also tests the selected proxy node once per minute by default |
+| Quit | Close the proxy, tray, and open Termihomo interfaces while keeping the tray preference |
+
+The menu shows the latest node, routing mode, TUN state, and latency.
 
 ## Supported platforms
 
@@ -75,12 +88,10 @@ In desktop sessions with a tray host, enable or disable the system tray under **
 
 ### Linux / macOS
 
-Download the install script with `curl`, then run it with your shell:
+Run the following command to install:
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh &&
-sh /tmp/termihomo-install.sh
-rm -f /tmp/termihomo-install.sh
+sh -c 'installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && exec sh -c "$installer"'
 ~~~
 
 Linux and macOS install to <code>~/.local/bin</code> by default. Add <code>~/.local/bin</code> to your shell's <code>PATH</code> if needed.
@@ -113,6 +124,10 @@ You can also download a build from <a href="https://github.com/Nyakooo/termihomo
 4. Extract or place the executable in a directory on your <code>PATH</code>.
 
 The installers download the matching release and verify its SHA-256 checksum before installation.
+
+## Uninstall
+
+Run `termihomo uninstall` to close the tray and interface, stop the core, and remove startup registration, the executable, logs, and caches. Subscriptions, user configuration, and manual configuration backups are kept.
 
 ## Quick start
 
@@ -153,6 +168,7 @@ Common commands:
 | <code>termihomo</code> | Launch the interactive TUI |
 | <code>termihomo install</code> | Download and verify the Mihomo core |
 | <code>termihomo update</code> | Update the Termihomo executable |
+| <code>termihomo uninstall</code> | Uninstall Termihomo and keep user configuration |
 | <code>termihomo start</code> / <code>stop</code> | Start or stop the background core |
 | <code>termihomo restart</code> / <code>reload</code> | Restart the core or reload its configuration |
 | <code>termihomo status --json</code> | Print machine-readable status |

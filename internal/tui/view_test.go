@@ -672,15 +672,21 @@ func TestGeneralAndDNSAreToolsTabs(t *testing.T) {
 	if m.page != generalPage {
 		t.Fatal("Tools should open General first")
 	}
-	m.handleKey("enter", "")
-	if m.form != "Auto-run" {
-		t.Fatalf("General edit opened %q", m.form)
+	m.trayAvailable = true
+	for i, field := range m.generalToolFields() {
+		if field.Type != "bool" {
+			continue
+		}
+		m.cursor = i
+		if cmd := m.handleKey("enter", ""); cmd == nil || m.form != "" {
+			t.Fatalf("%s should toggle without opening a form", field.Label)
+		}
+		m.busy = false
 	}
-	m.handleKey("esc", "")
-	m.handleKey("down", "")
+	m.cursor = 2
 	m.handleKey("enter", "")
-	if m.form != "Start on boot" {
-		t.Fatalf("second General setting opened %q", m.form)
+	if m.form != "Port" {
+		t.Fatalf("Port edit opened %q", m.form)
 	}
 	m.handleKey("esc", "")
 	m.handleKey("]", "")

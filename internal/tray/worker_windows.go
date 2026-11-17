@@ -2,8 +2,11 @@ package tray
 
 import (
 	_ "embed"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"fyne.io/systray"
@@ -42,8 +45,39 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable string) (*exec.Cmd, func(), error) {
-	cmd := directWorker(executable)
+func workerCommand(executable, dataDir string) (*exec.Cmd, func(), error) {
+	// Use a separate image so a resident tray cannot lock termihomo.exe during updates.
+	target := filepath.Join(dataDir, "tray-worker.exe")
+	input, err := os.Open(executable)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer input.Close()
+	file, err := os.CreateTemp(dataDir, ".tray-worker-*.exe")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(file.Name())
+	_, err = io.Copy(file, input)
+	if err := errors.Join(err, file.Close()); err != nil {
+		return nil, nil, err
+	}
+	if err := os.Rename(file.Name(), target); err != nil {
+		return nil, nil, err
+	}
+	cmd := directWorker(target, executable)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return cmd, func() {}, nil
+}
+
+func cleanupWorker() {}
+
+func openTerminal(executable string, args ...string) error {
+	cmd := exec.Command(executable, append([]string{ConsoleArg}, args...)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_CONSOLE}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }

@@ -41,6 +41,7 @@ Termihomo 是 Mihomo 的终端管理器，不实现代理协议，也不替代 M
 | `cmd/termihomo` | 程序入口 |
 | `internal/cli` | 命令解析、CLI 操作与 TUI 启动 |
 | `internal/tui` | 终端布局、页面、输入处理、交互状态 |
+| `internal/tray` | 桌面托盘进程、终端启动和托盘交互 |
 | `internal/i18n` | 简体中文与英文文本 |
 
 TUI 与 CLI 调用同一套 Core Manager，不维护两套独立的代理管理逻辑。
@@ -69,7 +70,7 @@ Termihomo 将 Mihomo 作为独立的后台进程管理：
 4. 启动 Mihomo 进程，通过本地 Controller API 获取运行状态。
 5. TUI / CLI 按需读取流量、节点、策略组、连接、DNS 事件和日志。
 
-关闭 TUI 不等于停止 Mihomo。内核由独立进程运行，可通过 `termihomo stop` 显式停止。
+关闭 TUI 后，Mihomo 继续运行，可通过 `termihomo stop` 停止。启用系统托盘时，独立的托盘进程继续读取内核状态。托盘使用进程锁避免重复启动界面，并通过数据目录中的请求文件通知界面打开节点页或退出。
 
 ## 4. 配置处理流程
 
@@ -96,7 +97,7 @@ Linux、macOS 和 Windows 共用主要的 Go 代码，但系统集成功能受�
 ## 6. 安全边界
 
 - 应用配置、数据和日志目录会以当前用户可访问的私有目录方式创建。
-- 默认混合代理监听地址为 `127.0.0.1:7890)，局域网访问默认关闭。
+- 默认混合代理监听地址为 `127.0.0.1:7890`，局域网访问默认关闭。
 - Mihomo Controller 使用本地地址和应用生成的访问凭据。
 - 启用 TUN 或修改系统代理会改变系统网络行为，应在理解影响后操作。
 - 订阅地址可能包含访问凭据；分享日志或配置前应先脱敏。
@@ -109,7 +110,8 @@ internal/cli/        CLI 命令
 internal/tui/        TUI 页面与交互
 internal/core/       Mihomo 管理与核心业务
 internal/platform/   平台适配
-internal/update/     自更新
+internal/tray/       桌面托盘
+internal/update/     可执行文件更新与移除
 internal/i18n/       国际化
 internal/version/    版本信息
 test/                安装与发布产物冒烟测试

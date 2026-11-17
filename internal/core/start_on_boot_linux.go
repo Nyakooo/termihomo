@@ -88,3 +88,17 @@ WantedBy=default.target
 func unitArgument(value string) string {
 	return strconv.Quote(strings.ReplaceAll(value, "%", "%%"))
 }
+
+func (m Manager) removeBootRegistration(ctx context.Context) error {
+	if runtime.GOOS == "android" {
+		return nil
+	}
+	if err := m.setStartOnBoot(ctx, false); err != nil {
+		return err
+	}
+	unit, _ := m.bootUnitPaths()
+	if err := os.Remove(unit); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}

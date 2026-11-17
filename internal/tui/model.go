@@ -122,7 +122,9 @@ type formHistory struct {
 }
 
 type model struct {
-	tray                *tray.Controller
+	trayAvailable       bool
+	trayExitToken       string
+	trayExitPending     bool
 	compactTerminal     bool
 	dnsFeed             dnsFeed
 	toolField           core.ToolField
@@ -204,7 +206,7 @@ type model struct {
 	hits     []hit
 }
 
-func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Language) error {
+func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Language, showNodes bool) error {
 	settings, err := loadSettings(manager.Paths.Config)
 	if err != nil {
 		return err
@@ -213,9 +215,23 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	defer cancel()
 	testCtx, cancelTests := context.WithCancel(ctx)
 	defer cancelTests()
-	m := &model{tray: tray.New(ctx), testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
+	m := &model{trayAvailable: tray.Available(), testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
+	if showNodes {
+		m.changePage(proxies)
+	}
 	program := tea.NewProgram(m, tea.WithInput(input), tea.WithOutput(output), tea.WithContext(ctx))
 	m.send = program.Send
+	if err := manager.Paths.Ensure(); err != nil {
+		return err
+	}
+	m.trayExitToken = tray.InterfaceToken(manager.Paths, tray.ExitInterface)
+	nodesToken := tray.InterfaceToken(manager.Paths, tray.OpenNodes)
+	interfaceLock, err := manager.Paths.RegisterTrayInterface()
+	if err != nil {
+		return err
+	}
+	defer interfaceLock.Close()
+	go watchTrayInterface(ctx, manager.Paths, m.trayExitToken, nodesToken, program.Send)
 	go reconnect(ctx, func() error {
 		return manager.StreamTraffic(ctx, func(event core.Traffic) { program.Send(event) })
 	}, func() { program.Send(trafficOffline{}) })
@@ -234,7 +250,6 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	go forwardLogBatches(ctx, logEvents, program.Send)
 	_, err = program.Run()
 	cancel()
-	m.tray.Wait()
 	return err
 }
 
@@ -342,6 +357,15 @@ func (m *model) act(label string, run func() error) tea.Cmd {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case trayExitMsg:
+		m.trayExitPending = true
+		if !m.busy {
+			return m, tea.Quit
+		}
+	case trayNodesMsg:
+		m.closeForm()
+		m.confirm, m.help, m.services.dialog = nil, false, false
+		m.changePage(proxies)
 	case tea.ColorProfileMsg:
 		// Native Windows consoles can support color without setting TERM.
 		if runtime.GOOS == "windows" {
@@ -419,13 +443,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation == m.speedGeneration && m.speedNodes[msg.name] && msg.result != nil {
 			delete(m.speedNodes, msg.name)
 			m.mergeProxyDelays(map[string]core.DelayResult{msg.name: *msg.result})
-			m.updateTray()
 		}
 	case speedDone:
 		if msg.generation == m.speedGeneration && m.speedNodes != nil {
 			m.speedNodes = nil
 			m.mergeProxyDelays(msg.delays)
-			m.updateTray()
 			if !m.busy {
 				if msg.err != nil {
 					m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
@@ -442,6 +464,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case operation:
 		m.profileUpdating, m.cardUpdating = false, false
 		m.busy = false
+		if m.trayExitPending {
+			return m, tea.Quit
+		}
 		m.lifecycle = ""
 		m.feedback = fmt.Sprintf(m.lang.Text("%s complete"), msg.label)
 		if msg.detail != "" {

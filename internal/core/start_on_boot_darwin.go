@@ -66,3 +66,7 @@ trap '/bin/rm -f "$temporary"' EXIT
 /bin/mv -f "$temporary" ` + shellQuote(target)
 	return runMacAdmin(ctx, command)
 }
+
+func (m Manager) removeBootRegistration(ctx context.Context) error {
+	return m.setStartOnBoot(ctx, false)
+}

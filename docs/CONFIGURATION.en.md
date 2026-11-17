@@ -45,12 +45,24 @@ keys:
 
 Key bindings must not conflict with reserved interface keys. Invalid settings are reported when the TUI starts.
 
+### General toggles
+
+Press Enter on a Boolean setting in **Tools → General** to toggle it.
+
+| Setting | Behavior |
+| --- | --- |
+| Auto-run | Start the proxy when the Termihomo interface opens |
+| Start on boot | Start the managed core when the computer boots. Registering the pre-login task on Windows requires administrator privileges |
+| Close connections on node change | Close all active Mihomo connections after a manual node change. Off by default |
+| System tray | Keep a tray item running when a tray host is available. Off by default |
+
 ### Data directory
 
 | Path | Purpose |
 | --- | --- |
 | `instance.json` | Runtime state for the managed core |
 | `mihomo/config.yaml` | Runtime configuration generated from the active profile and application settings |
+| `mihomo/config.yaml.manual.bak` | Manual backup created by `termihomo config backup` and kept during uninstall |
 | `cores/` | Installed Mihomo core versions |
 
 ### Log directory

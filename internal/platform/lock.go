@@ -24,6 +24,29 @@ func (p Paths) LockGeodata() (*os.File, error) {
 	return p.lock("geodata.lock")
 }
 
+func (p Paths) LockTray() (*os.File, error) {
+	return p.lock("tray.lock")
+}
+
+func (p Paths) RegisterTrayInterface() (*os.File, error) {
+	return p.lockMode("tray-interface.lock", false)
+}
+
+func (p Paths) TrayInterfaceOpen() (bool, error) {
+	lock, err := p.lock("tray-interface.lock")
+	if err == ErrInstanceBusy {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, lock.Close()
+}
+
+func (p Paths) lock(name string) (*os.File, error) {
+	return p.lockMode(name, true)
+}
+
 // LockExecutableUpdate serializes replacements of the executable at path.
 func LockExecutableUpdate(path string) (*os.File, error) {
 	return (Paths{Data: filepath.Dir(path)}).lock(filepath.Base(path) + ".update.lock")

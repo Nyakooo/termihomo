@@ -31,7 +31,12 @@ termihomo --lang zh-CN
 | `termihomo init` | 初始化应用配置、数据和日志目录 |
 | `termihomo install` | 下载并校验受支持的 Mihomo 内核 |
 | `termihomo update` | 更新 Termihomo 可执行程序 |
+| `termihomo uninstall` | 卸载程序及运行数据，保留配置 |
 | `termihomo version` | 显示版本和当前平台 |
+
+### 卸载
+
+`termihomo uninstall` 会退出托盘和终端界面，恢复 Termihomo 接管的系统代理，移除开机启动项并停止托管的 Mihomo。随后清理当前可执行文件、内核、日志和缓存，保留订阅、配置档案、应用设置及 `termihomo config backup` 生成的手动备份。Windows 在命令进程退出后移除可执行文件。
 
 ### 内核生命周期
 

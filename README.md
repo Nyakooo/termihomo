@@ -61,7 +61,20 @@ Termihomo 使用分区式终端界面组织信息：
 
 启动后按 <code>?</code> 查看当前版本的快捷键帮助。界面会根据终端尺寸调整布局；建议使用至少 80×24 的终端窗口。
 
-在提供托盘服务的桌面会话中，可以在 **工具 → 常规 → 系统托盘**开启或关闭托盘，默认关闭。托盘显示当前节点、路由模式、TUN 状态和最近一次可用的节点测速结果。
+### 系统托盘
+
+在 **工具 → 常规 → 系统托盘**开启，默认关闭。退出终端界面后，托盘继续运行。无桌面或托盘宿主的服务器可以照常使用 TUI 和 CLI。
+
+| 点击项 | 行为 |
+| --- | --- |
+| Termihomo | 打开终端界面。界面已打开时避免重复启动 |
+| 当前节点 | 打开节点列表，已有界面时在其中切换页面 |
+| 路由模式 | 按规则、全局、直连的顺序循环切换 |
+| TUN | 开启或关闭，沿用平台权限要求 |
+| 延迟 | 立即测试当前节点。后台默认每分钟测试当前代理节点 |
+| 退出 | 关闭代理、托盘和已打开的 Termihomo 界面，保留托盘设置 |
+
+节点、路由、TUN 和延迟的最新状态显示在菜单中。
 
 ## 支持平台
 
@@ -75,12 +88,10 @@ Termihomo 使用分区式终端界面组织信息：
 
 ### Linux / macOS
 
-先用 `curl` 下载安装脚本，再交给 Shell 执行：
+运行以下命令安装：
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh -o /tmp/termihomo-install.sh &&
-sh /tmp/termihomo-install.sh
-rm -f /tmp/termihomo-install.sh
+sh -c 'installer=$(curl -fsSL https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.sh) && exec sh -c "$installer"'
 ~~~
 
 Linux 和 macOS 默认安装到 <code>~/.local/bin</code>。如果 <code>~/.local/bin</code> 不在 <code>PATH</code> 中，可以加入当前 Shell 环境。
@@ -113,6 +124,10 @@ irm 'https://raw.githubusercontent.com/Nyakooo/termihomo/master/install.ps1' -Er
 4. 解压或放置可执行文件，并确保其所在目录已加入 <code>PATH</code>。
 
 安装脚本会自动下载对应版本，并在安装前校验 SHA-256。
+
+## 卸载
+
+运行 `termihomo uninstall`，退出托盘和界面、停止内核，并清理开机启动项、程序、日志和缓存。订阅、用户配置和手动配置备份会保留。
 
 ## 快速开始
 
@@ -153,6 +168,7 @@ termihomo logs -f
 | <code>termihomo</code> | 启动交互式 TUI |
 | <code>termihomo install</code> | 下载并校验 Mihomo 内核 |
 | <code>termihomo update</code> | 更新 Termihomo 程序 |
+| <code>termihomo uninstall</code> | 卸载程序并保留配置 |
 | <code>termihomo start</code> / <code>stop</code> | 启动或停止后台内核 |
 | <code>termihomo restart</code> / <code>reload</code> | 重启内核或重新加载配置 |
 | <code>termihomo status --json</code> | 输出机器可读的状态信息 |

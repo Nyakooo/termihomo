@@ -7,9 +7,11 @@ import (
 	_ "embed"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/godbus/dbus/v5"
 )
 
@@ -46,6 +48,45 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable string) (*exec.Cmd, func(), error) {
-	return directWorker(executable), func() {}, nil
+func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
+	command := directWorker(executable, executable)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return command, func() {}, nil
+}
+
+func cleanupWorker() {}
+
+func openTerminal(executable string, args ...string) error {
+	for _, terminal := range []struct {
+		name string
+		flag string
+	}{
+		{"xdg-terminal-exec", "--"},
+		{"x-terminal-emulator", "-e"},
+		{"gnome-terminal", "--"},
+		{"konsole", "-e"},
+		{"xterm", "-e"},
+	} {
+		path, err := exec.LookPath(terminal.name)
+		if err != nil {
+			continue
+		}
+		cmd := exec.Command(path, append([]string{terminal.flag, executable}, args...)...)
+		if err := cmd.Start(); err != nil {
+			continue
+		}
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case err := <-done:
+			timer.Stop()
+			if err == nil {
+				return nil
+			}
+		case <-timer.C:
+			return nil
+		}
+	}
+	return i18n.Message("Could not open a terminal")
 }

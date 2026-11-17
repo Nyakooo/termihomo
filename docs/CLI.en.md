@@ -31,7 +31,12 @@ termihomo --lang zh-CN
 | `termihomo init` | Initialize application config, data, and log directories |
 | `termihomo install` | Download and verify a supported Mihomo core |
 | `termihomo update` | Update the Termihomo executable |
+| `termihomo uninstall` | Remove the executable and runtime files while keeping user configuration |
 | `termihomo version` | Print the version and current platform |
+
+### Uninstall
+
+`termihomo uninstall` closes the tray and terminal interface, restores system proxy settings owned by Termihomo, removes startup registration, and stops the managed Mihomo process. It removes the current executable, core, logs, and caches while keeping subscriptions, profiles, application settings, and manual backups made with `termihomo config backup`. On Windows, the executable is removed after the command exits.
 
 ### Core lifecycle
 

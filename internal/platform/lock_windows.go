@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func (p Paths) lock(name string) (*os.File, error) {
+func (p Paths) lockMode(name string, exclusive bool) (*os.File, error) {
 	path := filepath.Join(p.Data, name)
 	filename, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -27,7 +27,11 @@ func (p Paths) lock(name string) (*os.File, error) {
 	}
 	if err == nil {
 		var offset windows.Overlapped
-		err = windows.LockFileEx(handle, windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &offset)
+		var flags uint32
+		if exclusive {
+			flags = windows.LOCKFILE_EXCLUSIVE_LOCK | windows.LOCKFILE_FAIL_IMMEDIATELY
+		}
+		err = windows.LockFileEx(handle, flags, 0, 1, 0, &offset)
 		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
 			err = ErrInstanceBusy
 		}

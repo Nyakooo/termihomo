@@ -1,155 +1,126 @@
-// Package tray presents a read-only summary from the terminal UI.
+// Package tray runs the desktop status menu independently of the terminal UI.
 package tray
 
 import (
 	"context"
-	"encoding/json"
-	"io"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
+
+	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
 const workerArg = "--tray-worker"
+const NodesArg = "--tray-nodes"
+const ConsoleArg = "--tray-console"
 
-// Summary holds the proxy state and the localized detail lines shown in the tray.
+type InterfaceAction string
+
+const (
+	ExitInterface InterfaceAction = "tray-exit"
+	OpenNodes     InterfaceAction = "tray-nodes"
+)
+
 type Summary struct {
-	Active bool
-	Lines  [4]string
+	Active  bool
+	Running bool
+	CanTest bool
+	Lines   [4]string
 }
 
-type update struct {
-	shown bool
-	info  Summary
+type ReadSummary func(ctx context.Context, test bool, refresh func()) Summary
+type DesktopState struct {
+	Enabled   func() bool
+	Read      ReadSummary
+	Pause     func(context.Context) error
+	CycleMode func(context.Context) error
+	ToggleTUN func(context.Context) error
 }
 
-type Controller struct {
-	ctx     context.Context
-	updates chan update
-	closed  chan struct{}
-	last    update
+func Available() bool { return supported() }
+
+func InterfaceToken(paths platform.Paths, action InterfaceAction) string {
+	token, _ := os.ReadFile(filepath.Join(paths.Data, string(action)))
+	return string(token)
 }
 
-func New(ctx context.Context) *Controller {
-	if !supported() {
-		return nil
+func requestInterfaceAction(paths platform.Paths, action InterfaceAction) error {
+	file, err := os.CreateTemp(paths.Data, "."+string(action)+"-")
+	if err != nil {
+		return err
 	}
-	return &Controller{ctx: ctx}
+	defer os.Remove(file.Name())
+	_, err = file.WriteString(filepath.Base(file.Name()))
+	if err := errors.Join(err, file.Close()); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), filepath.Join(paths.Data, string(action)))
 }
 
-// Set is called by the UI loop. Only the latest pending summary is needed.
-func (c *Controller) Set(shown bool, info Summary) {
-	if c == nil {
-		return
-	}
-	next := update{shown: shown, info: info}
-	if next == c.last {
-		return
-	}
-	c.last = next
-	if c.updates == nil {
-		c.updates, c.closed = make(chan update, 1), make(chan struct{})
-		go c.run(c.ctx)
-	}
-	select {
-	case <-c.updates:
-	default:
-	}
-	c.updates <- next
-}
-
-// Wait briefly for the worker to remove its icon after the UI is closed.
-func (c *Controller) Wait() {
-	if c == nil || c.closed == nil {
-		return
-	}
-	select {
-	case <-c.closed:
-	case <-time.After(time.Second):
-	}
-}
-
-func (c *Controller) run(ctx context.Context) {
-	var pipe io.WriteCloser
-	var encoder *json.Encoder
-	var done <-chan struct{}
-	stop := func() {
-		if pipe != nil {
-			pipe.Close()
-			pipe, encoder = nil, nil
+// Shutdown closes the tray and registered interfaces without changing preferences.
+func Shutdown(ctx context.Context, paths platform.Paths) error {
+	stopped := func() (bool, error) {
+		lock, err := paths.LockTray()
+		if errors.Is(err, platform.ErrInstanceBusy) {
+			return false, nil
 		}
-	}
-	defer func() {
-		stop()
-		if done != nil {
-			<-done
+		if err != nil {
+			return false, err
 		}
-		close(c.closed)
-	}()
-
+		defer lock.Close()
+		open, err := paths.TrayInterfaceOpen()
+		return !open, err
+	}
+	if done, err := stopped(); done || err != nil {
+		return err
+	}
+	if err := requestInterfaceAction(paths, ExitInterface); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-done:
-			stop()
-			done = nil
-		case next := <-c.updates:
-			if !next.shown {
-				stop()
-				continue
-			}
-			if encoder == nil {
-				if done != nil {
-					select {
-					case <-done:
-					case <-ctx.Done():
-						return
-					}
-				}
-				var err error
-				pipe, done, err = startWorker()
-				if err != nil {
-					continue
-				}
-				encoder = json.NewEncoder(pipe)
-			}
-			if err := encoder.Encode(next.info); err != nil {
-				stop()
+			return ctx.Err()
+		case <-ticker.C:
+			if done, err := stopped(); done || err != nil {
+				return err
 			}
 		}
 	}
 }
 
-func startWorker() (io.WriteCloser, <-chan struct{}, error) {
+// Start launches a detached worker. The worker takes the tray lock for its lifetime.
+func Start(paths platform.Paths) error {
+	lock, err := paths.LockTray()
+	if errors.Is(err, platform.ErrInstanceBusy) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	executable, err := os.Executable()
 	if err != nil {
-		return nil, nil, err
+		lock.Close()
+		return err
 	}
-	command, cleanup, err := workerCommand(executable)
+	command, cleanup, err := workerCommand(executable, paths.Data)
+	lock.Close()
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	command.Env = append(command.Environ(), "GH_TOKEN=", "GITHUB_TOKEN=")
-	pipe, err := command.StdinPipe()
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
 	if err := command.Start(); err != nil {
-		pipe.Close()
 		cleanup()
-		return nil, nil, err
+		return err
 	}
-	done := make(chan struct{})
-	go func() {
-		_ = command.Wait()
-		cleanup()
-		close(done)
-	}()
-	return pipe, done, nil
+	go func() { _ = command.Wait() }()
+	return nil
 }
 
-func directWorker(executable string) *exec.Cmd {
-	return exec.Command(executable, workerArg)
+func directWorker(executable, launcher string) *exec.Cmd {
+	return exec.Command(executable, workerArg, launcher)
 }

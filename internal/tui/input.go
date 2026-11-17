@@ -742,7 +742,7 @@ func (m *model) activate(h hit) tea.Cmd {
 			return m.dnsPageKey("enter")
 		}
 		if m.page == generalPage && !m.busy {
-			m.editToolField()
+			return m.toolPageKey("enter")
 		}
 		if m.page == networkPage && !m.busy && !m.showProxyExclusions {
 			return m.networkPageKey("enter")

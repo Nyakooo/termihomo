@@ -106,6 +106,11 @@ func (m Manager) readToolSettings() (map[string]any, error) {
 	return settings, nil
 }
 
+func (m Manager) TrayEnabled() bool {
+	settings, err := m.readToolSettings()
+	return err == nil && settings[SystemTrayKey] == true
+}
+
 func (m Manager) ToolSettings() (map[string]string, error) {
 	raw, err := m.readToolSettings()
 	if err != nil {

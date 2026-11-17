@@ -4,10 +4,13 @@ package tray
 
 import (
 	_ "embed"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 
 	"fyne.io/systray"
 )
@@ -38,7 +41,7 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable string) (*exec.Cmd, func(), error) {
+func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
 	dir, err := os.MkdirTemp("", "termihomo-tray-")
 	if err != nil {
 		return nil, nil, err
@@ -60,7 +63,48 @@ func workerCommand(executable string) (*exec.Cmd, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	return directWorker(target), cleanup, nil
+	command := directWorker(target, executable)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return command, cleanup, nil
+}
+
+func cleanupWorker() {
+	executable, err := os.Executable()
+	if err != nil {
+		return
+	}
+	bundle := filepath.Dir(filepath.Dir(filepath.Dir(executable)))
+	dir := filepath.Dir(bundle)
+	parent, parentErr := os.Stat(filepath.Dir(dir))
+	temp, tempErr := os.Stat(os.TempDir())
+	if parentErr == nil && tempErr == nil && os.SameFile(parent, temp) &&
+		filepath.Base(bundle) == "Termihomo.app" && strings.HasPrefix(filepath.Base(dir), "termihomo-tray-") {
+		_ = os.RemoveAll(bundle)
+		_ = os.Remove(dir)
+	}
+}
+
+func openTerminal(executable string, args ...string) error {
+	file, err := os.CreateTemp("", "termihomo-*.command")
+	if err != nil {
+		return err
+	}
+	quote := func(value string) string {
+		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+	}
+	command := quote(executable)
+	for _, arg := range args {
+		command += " " + quote(arg)
+	}
+	_, err = io.WriteString(file, "#!/bin/sh\n/bin/rm -f -- "+quote(file.Name())+"\nexec "+command+"\n")
+	err = errors.Join(err, file.Chmod(0o700), file.Close())
+	if err == nil {
+		err = exec.Command("/usr/bin/open", "-a", "Terminal", file.Name()).Run()
+	}
+	if err != nil {
+		_ = os.Remove(file.Name())
+	}
+	return err
 }
 
 func copyExecutable(source, target string) error {

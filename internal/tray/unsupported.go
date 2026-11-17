@@ -2,11 +2,15 @@
 
 package tray
 
-import "os/exec"
+import (
+	"os/exec"
 
-func supported() bool            { return false }
-func HandleWorker([]string) bool { return false }
+	"github.com/Nyakooo/termihomo/internal/platform"
+)
 
-func workerCommand(executable string) (*exec.Cmd, func(), error) {
-	return directWorker(executable), func() {}, nil
+func supported() bool                                               { return false }
+func HandleWorker([]string, func(platform.Paths) DesktopState) bool { return false }
+
+func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
+	return directWorker(executable, executable), func() {}, nil
 }

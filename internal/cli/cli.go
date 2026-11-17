@@ -19,6 +19,7 @@ import (
 	"github.com/Nyakooo/termihomo/internal/core"
 	"github.com/Nyakooo/termihomo/internal/i18n"
 	"github.com/Nyakooo/termihomo/internal/platform"
+	"github.com/Nyakooo/termihomo/internal/tray"
 	"github.com/Nyakooo/termihomo/internal/tui"
 	"github.com/Nyakooo/termihomo/internal/update"
 	"github.com/Nyakooo/termihomo/internal/version"
@@ -31,6 +32,7 @@ Commands:
   init       Initialize private configuration, data and log directories
   install    Download and verify the supported Mihomo release
   update     Update the Termihomo executable
+  uninstall  Remove Termihomo and its runtime files, keeping user configuration
   start      Start the managed Mihomo in the background
   stop       Stop the managed Mihomo
   reload     Reload the current configuration in the running process
@@ -58,6 +60,7 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
   init                        初始化私有配置、数据和日志目录
   install                     下载并校验支持的 Mihomo 版本
   update                      更新 Termihomo 程序
+  uninstall                   卸载程序并清理运行文件，保留用户配置
   start                       在后台启动托管的 Mihomo
   stop                        停止内核
   reload                      在当前进程中重新加载配置
@@ -80,6 +83,9 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
 `
 
 func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if runtime.GOOS == "windows" && len(args) > 0 && args[0] == tray.ConsoleArg {
+		return runTrayConsole(args[1:], stderr)
+	}
 	originalArgs := args
 	lang := i18n.FromEnvironment()
 	if _, explicit := i18n.Parse(os.Getenv("TERMIHOMO_LANG")); !explicit {
@@ -101,15 +107,16 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		args = args[2:]
 	}
 
-	if len(args) == 0 {
+	showNodes := len(args) == 1 && args[0] == tray.NodesArg
+	if len(args) == 0 || showNodes {
 		if handled, code := bridgeTerminal(originalArgs, stdin, stdout, stderr, lang); handled {
 			return code
 		}
 	}
-	if len(args) == 0 && isTerminal(stdin) && isTerminal(stdout) {
+	if (len(args) == 0 || showNodes) && isTerminal(stdin) && isTerminal(stdout) {
 		paths, err := platform.ResolvePaths()
 		if err == nil {
-			err = tui.Run(core.Manager{Paths: paths}, stdin, stdout, lang)
+			err = tui.Run(core.Manager{Paths: paths}, stdin, stdout, lang, showNodes)
 		}
 		if err != nil {
 			fmt.Fprintln(stderr, lang.Error(err))
@@ -127,6 +134,18 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return 0
 	case len(args) == 1 && args[0] == "version":
 		fmt.Fprintf(stdout, "termihomo %s (%s/%s)\n", version.Value, runtime.GOOS, runtime.GOARCH)
+		return 0
+	case len(args) == 1 && args[0] == "uninstall":
+		scheduled, err := uninstall()
+		if err != nil {
+			fmt.Fprintln(stderr, lang.Error(err))
+			return 1
+		}
+		message := "Termihomo uninstalled. User configuration was kept."
+		if scheduled {
+			message = "Termihomo will be removed after this process exits. User configuration was kept."
+		}
+		fmt.Fprintln(stdout, lang.Text(message))
 		return 0
 	case len(args) == 1 && args[0] == "update":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -162,6 +181,22 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	default:
 		return runCore(args, stdin, stdout, stderr, lang)
 	}
+}
+
+func runTrayConsole(args []string, stderr io.Writer) int {
+	input, err := os.OpenFile("CONIN$", os.O_RDWR, 0)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	defer input.Close()
+	output, err := os.OpenFile("CONOUT$", os.O_RDWR, 0)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	defer output.Close()
+	return RunWithInput(args, input, output, output)
 }
 
 func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n.Language) int {

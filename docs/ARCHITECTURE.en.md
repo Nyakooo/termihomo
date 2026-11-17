@@ -41,6 +41,7 @@ User
 | `cmd/termihomo` | Application entry point |
 | `internal/cli` | Command dispatch, CLI operations, and TUI startup |
 | `internal/tui` | Terminal layout, pages, input handling, and UI state |
+| `internal/tray` | Desktop tray worker, terminal launching, and tray actions |
 | `internal/i18n` | Simplified Chinese and English strings |
 
 The TUI and CLI use the same Core Manager rather than maintaining separate proxy-management implementations.
@@ -69,7 +70,7 @@ Termihomo manages Mihomo as a separate background process:
 4. Start Mihomo and use its local Controller API to inspect runtime state.
 5. Let the TUI / CLI query traffic, proxies, policy groups, connections, DNS events, and logs as needed.
 
-Closing the TUI does not stop Mihomo. The core runs independently and can be stopped explicitly with `termihomo stop`.
+Mihomo keeps running after the TUI closes. Use `termihomo stop` to stop it. When enabled, the tray worker continues to read the core state independently. It uses process locks to avoid duplicate interfaces and request files in the data directory to ask an interface to open the node list or quit.
 
 ## 4. Configuration flow
 
@@ -109,7 +110,8 @@ internal/cli/        CLI commands
 internal/tui/        TUI pages and interaction
 internal/core/       Mihomo management and core logic
 internal/platform/   Platform integration
-internal/update/     Self-update
+internal/tray/       Desktop tray
+internal/update/     Executable update and removal
 internal/i18n/       Localization
 internal/version/    Version information
 test/                Installer and release smoke tests
