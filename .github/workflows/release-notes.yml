@@ -1,0 +1,43 @@
+name: Sync historical release notes
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/release-notes/*.md'
+      - '.github/workflows/release-notes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-notes-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Update notes of published releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for notes in .github/release-notes/*.md; do
+            version="${notes##*/}"
+            version="${version%.md}"
+            if gh release view "$version" >/dev/null 2>&1; then
+              echo "Updating release notes: $version"
+              gh release edit "$version" --notes-file "$notes"
+            else
+              echo "Skipping $version (release not published)"
+            fi
+          done
