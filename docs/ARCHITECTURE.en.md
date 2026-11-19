@@ -88,7 +88,7 @@ The generated runtime configuration is not the sole source of truth. It is an ap
 Linux, macOS, and Windows share most Go code, but system integration depends on OS capabilities and permissions:
 
 - System proxy detection, updates, and restoration use platform-specific implementations.
-- Startup integration uses the mechanism provided by each platform.
+- Startup integration uses the mechanism provided by each platform. The core starts before login; the tray starts at desktop login through Linux XDG Autostart, a macOS LaunchAgent, or the Windows user Startup folder, and honors the system tray preference. Tray startup waits up to two minutes for the desktop host. Reading tool settings repairs missing desktop login entries for existing boot registrations.
 - TUN requires network privileges; exact requirements depend on the operating system and environment.
 - Terminal size, mouse events, and terminal capabilities can affect the TUI.
 

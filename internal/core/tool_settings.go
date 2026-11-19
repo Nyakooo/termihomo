@@ -137,6 +137,9 @@ func (m Manager) ToolSettings() (map[string]string, error) {
 	if err != nil {
 		return values, err
 	}
+	if err := m.syncDesktopStartup(enabled); err != nil {
+		return values, err
+	}
 	values[startOnBootKey] = strconv.FormatBool(enabled)
 	return values, nil
 }
@@ -164,7 +167,10 @@ func (m Manager) SetToolSetting(ctx context.Context, key, input string) error {
 	}
 	return m.withLock(func() error {
 		if key == startOnBootKey {
-			return m.setStartOnBoot(ctx, value == true)
+			if err := m.setStartOnBoot(ctx, value == true); err != nil {
+				return err
+			}
+			return m.syncDesktopStartup(value == true)
 		}
 		settings, err := m.readToolSettings()
 		if err != nil {

@@ -38,7 +38,13 @@ func watchTrayInterface(ctx context.Context, paths platform.Paths, exitToken, no
 }
 
 func (m *model) updateTray() {
-	if m.trayAvailable && m.snapshot.toolSettings[core.SystemTrayKey] == "true" &&
+	if m.snapshot.toolSettings[core.SystemTrayKey] != "true" {
+		return
+	}
+	if !m.trayAvailable {
+		m.trayAvailable = tray.Available()
+	}
+	if m.trayAvailable &&
 		tray.InterfaceToken(m.manager.Paths, tray.ExitInterface) == m.trayExitToken {
 		_ = tray.Start(m.manager.Paths)
 	}

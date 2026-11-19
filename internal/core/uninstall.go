@@ -13,6 +13,9 @@ func (m Manager) Uninstall(ctx context.Context) error {
 		if err := m.removeBootRegistration(ctx); err != nil {
 			return err
 		}
+		if err := m.syncDesktopStartup(false); err != nil {
+			return err
+		}
 		owner, _ := m.proxyOwnership()
 		if len(owner.Applied) > 0 {
 			if err := m.disableSystemProxy(ctx, ""); err != nil {

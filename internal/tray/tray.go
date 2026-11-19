@@ -113,7 +113,7 @@ func Start(paths platform.Paths) error {
 	if err != nil {
 		return err
 	}
-	command.Env = append(command.Environ(), "GH_TOKEN=", "GITHUB_TOKEN=")
+	command.Env = workerEnvironment(paths)
 	if err := command.Start(); err != nil {
 		cleanup()
 		return err

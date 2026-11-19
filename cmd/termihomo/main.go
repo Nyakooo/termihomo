@@ -12,5 +12,8 @@ func main() {
 	if tray.HandleWorker(os.Args[1:], tui.TrayDesktopState) {
 		return
 	}
+	if tray.HandleAutostart(os.Args[1:], tui.TrayDesktopState) {
+		return
+	}
 	os.Exit(cli.RunWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
