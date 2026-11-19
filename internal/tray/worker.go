@@ -43,6 +43,7 @@ func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	systray.Run(func() {
+		go watchDesktopSession(ctx)
 		systray.SetTooltip("Termihomo")
 		title := systray.AddMenuItem("Termihomo", "")
 		systray.AddSeparator()

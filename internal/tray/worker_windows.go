@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"io"
@@ -81,3 +82,5 @@ func openTerminal(executable string, args ...string) error {
 	go func() { _ = cmd.Wait() }()
 	return nil
 }
+
+func watchDesktopSession(context.Context) {}

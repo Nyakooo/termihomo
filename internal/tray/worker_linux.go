@@ -90,3 +90,24 @@ func openTerminal(executable string, args ...string) error {
 	}
 	return i18n.Message("Could not open a terminal")
 }
+
+// A lingering user manager can outlive the desktop bus. A disconnected worker
+// must release its tray lock so the next login can start a fresh worker.
+func watchDesktopSession(ctx context.Context) {
+	bus, err := dbus.SessionBus()
+	if err != nil {
+		os.Exit(0)
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !bus.Connected() {
+				os.Exit(0)
+			}
+		}
+	}
+}

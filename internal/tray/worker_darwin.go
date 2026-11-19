@@ -3,6 +3,7 @@
 package tray
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"io"
@@ -123,3 +124,5 @@ func copyExecutable(source, target string) error {
 	}
 	return err
 }
+
+func watchDesktopSession(context.Context) {}
