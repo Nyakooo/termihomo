@@ -1,0 +1,30 @@
+[
+  {
+    "name": "GeoIP.dat",
+    "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat",
+    "sha256": "d4ec4c5e5d5a38c1399964ea9fd8c94288426a3b31b483904b67819fc07f4466",
+    "size": 16503149,
+    "compressed": 3554396
+  },
+  {
+    "name": "geoip.metadb",
+    "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
+    "sha256": "da15c320b9126e92c2897413f5297a39bd2fb9fe4ea2a92b3f9da4b1a602c960",
+    "size": 8434612,
+    "compressed": 4181442
+  },
+  {
+    "name": "ASN.mmdb",
+    "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb",
+    "sha256": "3dceeef0f161aee0b48a3e71dd538798f5d95e9f4c2e0bc35f1c62874e22a4d5",
+    "size": 9065111,
+    "compressed": 5119006
+  },
+  {
+    "name": "GeoSite.dat",
+    "source": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
+    "sha256": "3ad532e6b868af69bc00fdefac28296acca13c151b2aaf90058b9f41795ae5d7",
+    "size": 4359441,
+    "compressed": 1300072
+  }
+]

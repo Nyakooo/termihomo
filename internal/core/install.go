@@ -60,11 +60,12 @@ func (m Manager) Install(ctx context.Context) error {
 	}
 	defer lock.Close()
 	if _, err := os.Stat(m.binary()); err == nil {
-		return nil
+		return m.ensureGeodata(ctx)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
+	reportProfileProgress(ctx, "Preparing Mihomo")
 	asset, digest := kernelAsset(runtime.GOOS, runtime.GOARCH)
 	if asset == "" {
 		return i18n.Message("no Mihomo release for this architecture")
@@ -109,7 +110,10 @@ func (m Manager) Install(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return os.Rename(bin.Name(), m.binary())
+	if err := os.Rename(bin.Name(), m.binary()); err != nil {
+		return err
+	}
+	return m.ensureGeodata(ctx)
 }
 
 // Race complete, verified downloads so a fast response with an invalid or slow

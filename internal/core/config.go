@@ -160,12 +160,12 @@ func (m Manager) prepareConfig(ctx context.Context, state instance) error {
 }
 
 func (m Manager) validateConfig(ctx context.Context, body []byte) error {
-	if err := m.ensureGeodata(ctx); err != nil {
+	check, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := m.ensureGeodata(check); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
-		return err
-	}
+	reportProfileProgress(ctx, "Validating profile")
 	file, err := os.CreateTemp(m.runDir(), ".config-*.yaml")
 	if err != nil {
 		return err
@@ -178,14 +178,19 @@ func (m Manager) validateConfig(ctx context.Context, body []byte) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	check, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
 	cmd := exec.CommandContext(check, m.binary(), "-d", m.runDir(), "-t", "-f", file.Name())
 	cmd.Env = mihomoEnv()
+	cmd.WaitDelay = time.Second
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(check.Err(), context.DeadlineExceeded) {
+			return i18n.Message("Mihomo configuration validation timed out; check GeoIP/GeoSite and rule provider downloads")
+		}
 		return i18n.Errorf("Mihomo configuration validation failed: %s", validationDetail(output.String(), body, file.Name()))
 	}
 	return nil

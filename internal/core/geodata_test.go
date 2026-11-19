@@ -1,15 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Nyakooo/termihomo/internal/platform"
 )
@@ -20,104 +19,82 @@ func writeManifest(t *testing.T, m Manager, manifest map[string]int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(m.geodataManifestPath(), body, 0o600); err != nil {
+	if err := os.WriteFile(m.geodataManifestPath(), body, 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEnsureGeodataExtractsOfflineAndRepairsPartial(t *testing.T) {
+	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	files, err := geodataFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 4 {
+		t.Fatalf("want all four database formats, got %d", len(files))
+	}
+	for _, file := range files {
+		path := filepath.Join(m.runDir(), file.Name)
+		body, err := os.ReadFile(path)
+		if err != nil || int64(len(body)) != file.Size {
+			t.Fatalf("%s: size=%d err=%v", file.Name, len(body), err)
+		}
+		if err := os.WriteFile(path, []byte("partial"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		info, err := os.Stat(filepath.Join(m.runDir(), file.Name))
+		if err != nil || info.Size() != file.Size || m.readGeodataManifest()[file.Name] != file.Size {
+			t.Fatalf("%s was not repaired: %v", file.Name, err)
+		}
 	}
 }
 
 func TestEnsureGeodataSkipsCompleteCache(t *testing.T) {
 	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
-	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
+	if err := os.MkdirAll(m.runDir(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	files, err := geodataFiles()
+	if err != nil {
 		t.Fatal(err)
 	}
 	manifest := make(map[string]int64)
-	for _, file := range geodataFiles {
-		body := []byte("cached-" + file.name)
-		if err := os.WriteFile(filepath.Join(m.runDir(), file.name), body, 0o600); err != nil {
+	for _, file := range files {
+		body := []byte("cached-" + file.Name)
+		if err := os.WriteFile(filepath.Join(m.runDir(), file.Name), body, 0600); err != nil {
 			t.Fatal(err)
 		}
-		manifest[file.name] = int64(len(body))
+		manifest[file.Name] = int64(len(body))
 	}
 	writeManifest(t, m, manifest)
-	if err := m.ensureGeodata(context.Background()); err != nil {
-		t.Fatalf("ensureGeodata with a complete cache: %v", err)
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
 	}
-	for _, file := range geodataFiles {
-		body, err := os.ReadFile(filepath.Join(m.runDir(), file.name))
-		if err != nil || string(body) != "cached-"+file.name {
-			t.Fatalf("cached %s was modified: %q err=%v", file.name, body, err)
+	for _, file := range files {
+		body, err := os.ReadFile(filepath.Join(m.runDir(), file.Name))
+		if err != nil || string(body) != "cached-"+file.Name {
+			t.Fatalf("cached database changed: %s, %v", file.Name, err)
 		}
 	}
 }
 
-func TestEnsureGeodataRedownloadsPartial(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "complete-payload")
-	}))
-	defer server.Close()
-	orig := geodataFiles
-	defer func() { geodataFiles = orig }()
-	geodataFiles = []struct {
-		name string
-		url  string
-	}{{"GeoSite.dat", server.URL}}
-
+func TestEnsureGeodataCancellationDoesNotWriteFiles(t *testing.T) {
 	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
-	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := m.ensureGeodata(ctx); err != context.Canceled {
+		t.Fatalf("got %v", err)
 	}
-	target := filepath.Join(m.runDir(), "GeoSite.dat")
-	if err := os.WriteFile(target, []byte("partial"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeManifest(t, m, map[string]int64{"GeoSite.dat": 999})
-	if err := m.ensureGeodata(context.Background()); err != nil {
-		t.Fatalf("ensureGeodata: %v", err)
-	}
-	body, err := os.ReadFile(target)
-	if err != nil || string(body) != "complete-payload" {
-		t.Fatalf("partial file should be replaced, got %q err=%v", body, err)
-	}
-	if m.readGeodataManifest()["GeoSite.dat"] != int64(len("complete-payload")) {
-		t.Fatal("manifest should record the complete size")
-	}
-}
-
-func TestDownloadGeodata(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "geodata-payload")
-	}))
-	defer server.Close()
-	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
-	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(m.runDir(), "GeoSite.dat")
-	size, err := m.downloadGeodata(context.Background(), server.URL, target)
-	if err != nil {
-		t.Fatalf("downloadGeodata: %v", err)
-	}
-	body, err := os.ReadFile(target)
-	if err != nil || string(body) != "geodata-payload" || size != int64(len(body)) {
-		t.Fatalf("downloaded content=%q size=%d err=%v", body, size, err)
-	}
-}
-
-func TestDownloadGeodataReportsFailure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
-	if err := os.MkdirAll(m.runDir(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(m.runDir(), "GeoSite.dat")
-	if _, err := m.downloadGeodata(context.Background(), server.URL, target); err == nil {
-		t.Fatal("expected an error for HTTP 500")
-	}
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Fatal("a failed download must not leave a partial file")
+	if _, err := os.Stat(m.geodataManifestPath()); !os.IsNotExist(err) {
+		t.Fatal("cancelled extraction wrote manifest")
 	}
 }
 
@@ -147,5 +124,68 @@ func TestValidationDetailRedactsSecretAndURL(t *testing.T) {
 	}
 	if strings.Contains(detail, "Start initial configuration") {
 		t.Fatalf("detail should drop info noise: %q", detail)
+	}
+}
+
+func TestEnsureGeodataPreservesUpdatedAndUntrackedDatabases(t *testing.T) {
+	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	files, err := geodataFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A complete extra protobuf entry models a valid core-managed DAT update.
+	path := filepath.Join(m.runDir(), "GeoSite.dat")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = append(body, 0x0a, 0x04, 0x0a, 0x02, 'z', 'z')
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(saved, body) {
+		t.Fatal("valid updated DAT was overwritten")
+	}
+	if m.readGeodataManifest()["GeoSite.dat"] != int64(len(body)) {
+		t.Fatal("updated size not adopted")
+	}
+	// Missing/null metadata must adopt complete MMDB and DAT files, not replace
+	// user snapshots. Their modification times reveal any unnecessary rewrite.
+	stamp := time.Unix(1000000000, 0)
+	for _, file := range files {
+		if err := os.Chtimes(filepath.Join(m.runDir(), file.Name), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(m.geodataManifestPath(), []byte("null"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ensureGeodata(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		info, err := os.Stat(filepath.Join(m.runDir(), file.Name))
+		if err != nil || !info.ModTime().Equal(stamp) {
+			t.Fatalf("valid %s was rewritten: %v", file.Name, err)
+		}
+	}
+}
+
+func TestGeodataRejectsTruncatedFrames(t *testing.T) {
+	valid := []byte{0x0a, 0x04, 0x0a, 0x02, 'c', 'n'}
+	if !validGeodataList(valid) {
+		t.Fatal("valid protobuf rejected")
+	}
+	for n := 0; n < len(valid); n++ {
+		if validGeodataList(valid[:n]) {
+			t.Fatalf("accepted prefix of length %d", n)
+		}
 	}
 }

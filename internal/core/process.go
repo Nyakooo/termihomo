@@ -400,6 +400,7 @@ func (m Manager) startOnMode(ctx context.Context, proxyAddress string, paused bo
 	if err := proxy.Close(); err != nil {
 		return err
 	}
+	reportProfileProgress(ctx, "Starting Mihomo")
 	return m.launchPrepared(ctx, state)
 }
 
@@ -443,6 +444,9 @@ func (m Manager) launchPrepared(ctx context.Context, state instance) error {
 		}
 		select {
 		case <-startup.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			m.recordLifecycle("Mihomo did not become ready")
 			return i18n.Message("Mihomo did not become ready")
 		case <-time.After(100 * time.Millisecond):

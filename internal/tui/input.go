@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -31,6 +32,26 @@ func (m *model) cancelInstallForExit() bool {
 	return true
 }
 
+// Cancel the work context, keeping the UI alive until rollback and cleanup finish.
+func (m *model) cancelForExit() bool {
+	if m.cancelInstallForExit() {
+		return true
+	}
+	if m.cancelOperation == nil && m.cancelProfile == nil {
+		return false
+	}
+	m.exitPending = true
+	m.profileCancelling = true
+	m.feedback = m.lang.Text("Cancelling current operation") + "…"
+	if m.cancelProfile != nil {
+		m.cancelProfile()
+	}
+	if m.cancelOperation != nil {
+		m.cancelOperation()
+	}
+	return true
+}
+
 func (m *model) handleKey(key, value string) tea.Cmd {
 	quit := m.settings.key("quit")
 	exclusions := m.page == networkPage && m.showProxyExclusions
@@ -39,7 +60,7 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 	}
 	if key == "ctrl+c" || key == quit {
 		if m.busy {
-			if !m.cancelInstallForExit() {
+			if !m.cancelForExit() {
 				m.feedback = m.lang.Text("Wait for the current operation to finish")
 			}
 			return nil
@@ -48,6 +69,12 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 			m.cancelTests()
 		}
 		return tea.Quit
+	}
+	if key == "esc" && m.cancelProfile != nil {
+		m.profileCancelling = true
+		m.feedback = m.lang.Text("Cancelling current operation") + "…"
+		m.cancelProfile()
+		return nil
 	}
 	if m.page == connectionsPage && m.requests.menu != "" {
 		m.requestMenuKey(key)
@@ -641,12 +668,7 @@ func (m *model) updateProfile() tea.Cmd {
 		m.feedback = m.lang.Text("no subscription is configured")
 		return nil
 	}
-	m.profileUpdating, m.profileFrame = true, 0
-	m.profileSpinID++
-	return tea.Batch(
-		m.act(m.lang.Text("Update profile"), func() error { return m.manager.UpdateProfile(m.ctx) }),
-		profileSpinTick(m.profileSpinID),
-	)
+	return m.profileAction(m.lang.Text("Update profile"), func(ctx context.Context) error { return m.manager.UpdateProfile(ctx) })
 }
 
 func (m *model) profileCards() []core.ProfileInfo {
@@ -686,11 +708,9 @@ func (m *model) profileCardAction(key string) tea.Cmd {
 		if item.Source != "subscription" {
 			return nil
 		}
-		m.profileUpdating, m.cardUpdating, m.profileFrame = true, true, 0
+		m.cardUpdating = true
 		m.updatingProfileID = item.ID
-		m.profileSpinID++
-		return tea.Batch(profileSpinTick(m.profileSpinID),
-			m.act(m.lang.Text("Update profile"), func() error { return m.manager.UpdateSavedProfile(m.ctx, item.ID) }))
+		return m.profileAction(m.lang.Text("Update profile"), func(ctx context.Context) error { return m.manager.UpdateSavedProfile(ctx, item.ID) })
 	}
 	return nil
 }
@@ -704,18 +724,18 @@ func (m *model) activateProfileCard() tea.Cmd {
 	if item.Active {
 		return nil
 	}
-	return m.act(m.lang.Text("Switch profile"), func() error {
-		return m.manager.ActivateProfile(m.ctx, item.ID)
+	return m.profileAction(m.lang.Text("Switch profile"), func(ctx context.Context) error {
+		return m.manager.ActivateProfile(ctx, item.ID)
 	})
 }
 
 func (m *model) updateAllProfiles(dueOnly bool) tea.Cmd {
-	m.profileUpdating, m.profileFrame, m.busy = true, 0, true
-	m.profileSpinID++
+	if m.busy {
+		return nil
+	}
 	label := m.lang.Text("Update all profiles")
-	m.feedback = label + "…"
-	return tea.Batch(profileSpinTick(m.profileSpinID), func() tea.Msg {
-		updated, failed, err := m.manager.UpdateProfiles(m.ctx, dueOnly)
+	return m.profileTask(label, func(ctx context.Context) operation {
+		updated, failed, err := m.manager.UpdateProfiles(ctx, dueOnly)
 		return operation{label: label, err: err,
 			detail: fmt.Sprintf(m.lang.Text("%d updated · %d failed"), updated, failed)}
 	})
@@ -978,8 +998,8 @@ func (m *model) formKey(key, value string) tea.Cmd {
 			m.retrySchedule = schedule
 			m.retryProfileID, m.retryProfileSource = id, source
 			m.retryForm, m.retryInput, m.retryName = form, []rune(input), name
-			return m.act(m.lang.Text("Edit profile"), func() error {
-				return m.manager.EditProfile(m.ctx, id, name, input, schedule)
+			return m.profileAction(m.lang.Text("Edit profile"), func(ctx context.Context) error {
+				return m.manager.EditProfile(ctx, id, name, input, schedule)
 			})
 		case "Filter":
 			m.filter, m.cursor = strings.ToLower(input), 0
@@ -989,8 +1009,8 @@ func (m *model) formKey(key, value string) tea.Cmd {
 				return nil
 			}
 			m.retryForm, m.retryInput, m.retryName = form, []rune(input), name
-			return m.act(m.lang.Text("Import profile"), func() error {
-				return m.manager.AddProfile(m.ctx, input, name, form == "Local YAML path")
+			return m.profileAction(m.lang.Text("Import profile"), func(ctx context.Context) error {
+				return m.manager.AddProfile(ctx, input, name, form == "Local YAML path")
 			})
 		}
 	default:

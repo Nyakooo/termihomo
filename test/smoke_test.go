@@ -108,13 +108,31 @@ func TestReleaseBinary(t *testing.T) {
 	if s := status(); s.State != "Stopped" {
 		t.Fatalf("after install: %+v", s)
 	}
+	// Every release must import GeoSite, both GeoIP formats and ASN rules
+	// using the bundled snapshot, with network proxies deliberately unreachable.
+	for _, mode := range []string{"false", "true"} {
+		path := filepath.Join(root, "offline-"+mode+".yaml")
+		body := "geodata-mode: " + mode + "\nrules:\n  - GEOSITE,cn,DIRECT\n  - GEOIP,CN,DIRECT\n  - IP-ASN,13335,DIRECT\n  - MATCH,DIRECT\n"
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		cmd := exec.CommandContext(ctx, binary, "profile", "import", path, "--yes")
+		cmd.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1",
+			"ALL_PROXY=http://127.0.0.1:1", "http_proxy=http://127.0.0.1:1", "https_proxy=http://127.0.0.1:1", "all_proxy=http://127.0.0.1:1", "NO_PROXY=", "no_proxy=")
+		output, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			t.Fatalf("offline import (geodata-mode=%s): %v: %s", mode, err, output)
+		}
+	}
 	t.Cleanup(func() {
 		if _, diagnostic, err := run("", "stop", "--yes"); err != nil {
 			t.Errorf("stop: %v: %s", err, diagnostic)
 		}
 	})
 	const secret = "release-test-token"
-	if _, diagnostic, err := run(server.URL+"/sub?token="+secret, "profile", "add", "-"); err != nil {
+	if _, diagnostic, err := run(server.URL+"/sub?token="+secret, "profile", "add", "-", "--yes"); err != nil {
 		t.Fatalf("import subscription: %v: %s", err, diagnostic)
 	}
 	command("config", "check")

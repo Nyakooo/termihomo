@@ -99,21 +99,23 @@ func (m Manager) updateSavedProfile(ctx context.Context, item profile, active bo
 		return err
 	}
 	next.ID, next.Schedule, next.Added = item.ID, item.Schedule, item.addedAt()
+	return m.updateProfileCandidate(ctx, item, next, active)
+}
+
+// Validate outside the instance lock and commit only if the source profile and
+// tool settings still match the snapshots used for validation.
+func (m Manager) updateProfileCandidate(ctx context.Context, item, next profile, active bool) error {
 	if err := m.Paths.Ensure(); err != nil {
 		return err
 	}
-	settings, err := m.readToolSettings()
+	settings, err := m.validateProfileCandidate(ctx, next)
 	if err != nil {
-		return err
-	}
-	candidate, err := renderConfigWithSettings(next.YAML, validationInstance(), settings)
-	if err != nil {
-		return err
-	}
-	if err := m.validateConfig(ctx, candidate); err != nil {
 		return err
 	}
 	return m.withLock(func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		current, isActive, err := m.findProfile(item.ID)
 		if err != nil {
 			return err
@@ -131,8 +133,24 @@ func (m Manager) updateSavedProfile(ctx context.Context, item profile, active bo
 		if active {
 			return m.applyProfileCandidate(ctx, next, true)
 		}
+		reportProfileProgress(ctx, "Saving profile")
 		return m.saveValidatedProfile(next)
 	})
+}
+
+func (m Manager) validateProfileCandidate(ctx context.Context, next profile) (map[string]any, error) {
+	settings, err := m.readToolSettings()
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := renderConfigWithSettings(next.YAML, validationInstance(), settings)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.validateConfig(ctx, candidate); err != nil {
+		return nil, err
+	}
+	return settings, nil
 }
 
 func (m Manager) DeleteProfile(ctx context.Context, id string) error {
@@ -296,41 +314,47 @@ func (m Manager) AddProfile(ctx context.Context, source, name string, local bool
 	if err := m.Install(ctx); err != nil {
 		return err
 	}
+	var next profile
+	var err error
+	if local {
+		reportProfileProgress(ctx, "Reading profile")
+		next, err = loadProfileFile(source, name)
+	} else {
+		next, err = downloadSubscription(ctx, source, "", name)
+	}
+	if err != nil {
+		return err
+	}
+	settings, err := m.validateProfileCandidate(ctx, next)
+	if err != nil {
+		return err
+	}
+	// Download and validation must not hold the instance lock: other interfaces
+	// must remain able to stop or inspect the current instance during a slow import.
 	return m.withLock(func() error {
-		var next profile
-		var err error
-		if local {
-			next, err = loadProfileFile(source, name)
-		} else {
-			next, err = downloadSubscription(ctx, source, "", name)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
+		currentSettings, err := m.readToolSettings()
 		if err != nil {
 			return err
+		}
+		if !reflect.DeepEqual(settings, currentSettings) {
+			return i18n.Message("Settings changed during the update. Run the command again.")
 		}
 		current, err := m.readProfile()
 		if err != nil {
 			return err
 		}
-		// IDs are stored as hex filenames.
 		var id [16]byte
 		rand.Read(id[:])
 		next.ID = hex.EncodeToString(id[:])
 		if current.Source == "" {
-			return m.applyProfile(ctx, next)
+			return m.applyProfileCandidate(ctx, next, true)
 		}
-		return m.validateAndSaveProfile(ctx, next)
+		reportProfileProgress(ctx, "Saving profile")
+		return m.saveValidatedProfile(next)
 	})
-}
-
-func (m Manager) validateAndSaveProfile(ctx context.Context, next profile) error {
-	config, err := m.renderConfig(next.YAML, validationInstance())
-	if err != nil {
-		return err
-	}
-	if err := m.validateConfig(ctx, config); err != nil {
-		return err
-	}
-	return m.saveValidatedProfile(next)
 }
 
 func (m Manager) saveValidatedProfile(next profile) error {

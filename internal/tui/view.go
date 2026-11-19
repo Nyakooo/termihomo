@@ -327,6 +327,9 @@ func (m *model) topbar() string {
 func (m *model) statusbar(actions string) string {
 	right := m.rateSummary()
 	left := safe(m.feedback)
+	if m.cancelProfile != nil {
+		left += fmt.Sprintf(" · %ds · Esc %s", int(time.Since(m.profileStarted).Seconds()), m.lang.Text("Cancel"))
+	}
 	if left == "" {
 		left = m.style.dim("Tab " + m.lang.Text("Switch page"))
 		if m.page == proxies {
@@ -1295,7 +1298,11 @@ func (m *model) profilesPage(height int) []string {
 	toolbar := m.controls([]control{{"a", "Add link"}, {"i", "Add file"}, {"u", "Update all profiles"}}, 0, 3, m.width)
 	if m.profileUpdating && !m.cardUpdating {
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		toolbar = s.accent(frames[m.profileFrame%len(frames)] + " " + m.lang.Text("Updating…"))
+		stage := m.lang.Text("Updating…")
+		if m.cancelProfile != nil {
+			stage = safe(m.feedback) + " · Esc " + m.lang.Text("Cancel")
+		}
+		toolbar = s.accent(frames[m.profileFrame%len(frames)] + " " + stage)
 	}
 	lines := []string{toolbar, ""}
 	if m.snapshot.profileErr != nil {

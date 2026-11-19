@@ -1,6 +1,19 @@
 package i18n
 
 var zh = map[string]string{
+	"Starting Mihomo": "正在启动 Mihomo",
+	"Subscription download timed out; check the link and retry": "订阅下载超时，请检查链接后重试",
+	"Preparing Mihomo":            "正在准备 Mihomo 内核",
+	"Downloading profile":         "正在下载配置",
+	"Reading profile":             "正在读取配置文件",
+	"Preparing local databases":   "正在准备本地规则数据库",
+	"Validating profile":          "正在校验配置",
+	"Saving profile":              "正在保存配置",
+	"Applying profile":            "正在应用配置",
+	"Profile operation cancelled": "已取消配置操作",
+	"Profile operation timed out; check the subscription or provider connection and retry": "配置操作超时，请检查订阅或规则集连接后重试",
+	"Bundled database verification failed":                                                 "内置数据库校验失败",
+
 	"Termihomo interface did not open":                                                 "Termihomo 界面未打开",
 	"Termihomo uninstalled. User configuration was kept.":                              "Termihomo 已卸载，用户配置已保留。",
 	"Termihomo will be removed after this process exits. User configuration was kept.": "当前进程退出后将移除 Termihomo，用户配置已保留。",
@@ -257,7 +270,9 @@ var zh = map[string]string{
 	"Upload    ":                       "上传      ",
 	"Uptime       ":                    "运行时间     ",
 	"Version     ":                     "版本        ",
-	"Cancelling Mihomo installation":   "正在取消 Mihomo 安装",
+	"Cancelling current operation":     "正在取消当前操作",
+	"Mihomo configuration validation timed out; check GeoIP/GeoSite and rule provider downloads": "Mihomo 配置校验超时，请检查 GeoIP/GeoSite 和规则集下载连接",
+	"Cancelling Mihomo installation":                                 "正在取消 Mihomo 安装",
 	"Wait for the current operation to finish":                       "请等待当前操作完成",
 	"a  Add subscription    i  Import local YAML    u  Update":       "a 添加订阅  ·  i 导入 YAML  ·  u 更新",
 	"application directories must be private directories":            "应用目录必须为私有目录",

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -219,11 +220,16 @@ func normalizeSubscription(body []byte) []byte {
 }
 
 func (m Manager) ImportProfile(ctx context.Context, path string) error {
+	current, err := m.readProfile()
+	if err != nil {
+		return err
+	}
 	next, err := loadProfileFile(path, "")
 	if err != nil {
 		return err
 	}
-	return m.withLock(func() error { return m.applyProfile(ctx, next) })
+	next.ID, next.Schedule, next.Added = current.ID, current.Schedule, current.addedAt()
+	return m.updateProfileCandidate(ctx, current, next, true)
 }
 
 func loadProfileFile(path, name string) (profile, error) {
@@ -251,32 +257,48 @@ func (m Manager) AddSubscription(ctx context.Context, source string) error {
 }
 
 func (m Manager) AddNamedSubscription(ctx context.Context, source, name string) error {
-	return m.withLock(func() error { return m.fetchSubscription(ctx, source, "", strings.TrimSpace(name)) })
+	current, err := m.readProfile()
+	if err != nil {
+		return err
+	}
+	next, err := downloadSubscription(ctx, source, "", strings.TrimSpace(name))
+	if err != nil {
+		return err
+	}
+	next.ID, next.Schedule, next.Added = current.ID, current.Schedule, current.addedAt()
+	return m.updateProfileCandidate(ctx, current, next, true)
 }
 
-// EditProfile updates metadata directly and validates a changed subscription before replacing it.
+// EditProfile validates changed subscriptions before taking the commit lock.
 func (m Manager) EditProfile(ctx context.Context, id, name, source string, schedule ProfileSchedule) error {
-	return m.withLock(func() error {
-		current, active, err := m.findProfile(id)
+	current, active, err := m.findProfile(id)
+	if err != nil {
+		return err
+	}
+	if current.Source == "" {
+		return i18n.Message("No active profile")
+	}
+	if schedule.Minutes < 0 || schedule.Minutes > 525600 {
+		return i18n.Message("Update interval must be between 1 and 525600 minutes")
+	}
+	if source != "" && source != current.URL {
+		next, err := downloadSubscription(ctx, source, "", name)
 		if err != nil {
 			return err
 		}
-		if current.Source == "" {
-			return i18n.Message("No active profile")
+		next.ID, next.Schedule, next.Added = current.ID, schedule, current.addedAt()
+		return m.updateProfileCandidate(ctx, current, next, active)
+	}
+	return m.withLock(func() error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if schedule.Minutes < 0 || schedule.Minutes > 525600 {
-			return i18n.Message("Update interval must be between 1 and 525600 minutes")
+		latest, latestActive, err := m.findProfile(id)
+		if err != nil {
+			return err
 		}
-		if source != "" && source != current.URL {
-			next, err := downloadSubscription(ctx, source, "", name)
-			if err != nil {
-				return err
-			}
-			next.ID, next.Schedule, next.Added = current.ID, schedule, current.addedAt()
-			if !active {
-				return m.validateAndSaveProfile(ctx, next)
-			}
-			return m.applyProfile(ctx, next)
+		if latestActive != active || !reflect.DeepEqual(latest, current) {
+			return i18n.Message("Profile changed during the update. Run the command again.")
 		}
 		if name != "" && name != current.Name {
 			current.Name, current.CustomName = name, name
@@ -315,20 +337,8 @@ func readProfileBody(reader io.Reader) ([]byte, error) {
 	return body, nil
 }
 
-func (m Manager) fetchSubscription(ctx context.Context, source, previousName, customName string) error {
-	next, err := downloadSubscription(ctx, source, previousName, customName)
-	if err != nil {
-		return err
-	}
-	current, err := m.readProfile()
-	if err != nil {
-		return err
-	}
-	next.ID, next.Schedule, next.Added = current.ID, current.Schedule, current.addedAt()
-	return m.applyProfile(ctx, next)
-}
-
 func downloadSubscription(ctx context.Context, source, previousName, customName string) (profile, error) {
+	reportProfileProgress(ctx, "Downloading profile")
 	parsed, err := url.Parse(source)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
 		return profile{}, i18n.Message("subscription requires a valid HTTP or HTTPS URL")
@@ -366,21 +376,35 @@ func downloadSubscription(ctx context.Context, source, previousName, customName 
 }
 
 func requestSubscription(ctx context.Context, client *http.Client, source, userAgent string) ([]byte, http.Header, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	downloadError := func(fallback error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if requestCtx.Err() != nil {
+			return i18n.Message("Subscription download timed out; check the link and retry")
+		}
+		return fallback
+	}
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, source, nil)
 	if err != nil {
 		return nil, nil, i18n.Message("invalid subscription request")
 	}
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, i18n.Message("subscription download failed")
+		return nil, nil, downloadError(i18n.Message("subscription download failed"))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, i18n.Errorf("subscription server returned HTTP %d", resp.StatusCode)
 	}
 	body, err := readProfileBody(resp.Body)
-	return normalizeSubscription(body), resp.Header, err
+	if err != nil {
+		return nil, nil, downloadError(err)
+	}
+	return normalizeSubscription(body), resp.Header, nil
 }
 
 func isProxyLinkList(body []byte) bool {
@@ -499,6 +523,10 @@ func (m Manager) applyProfileCandidate(ctx context.Context, next profile, valida
 			return err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	reportProfileProgress(ctx, "Saving profile")
 	if next.Added.IsZero() {
 		next.Added = next.addedAt()
 	}
@@ -540,6 +568,7 @@ func (m Manager) applyProfileCandidate(ctx context.Context, next profile, valida
 		_ = os.Remove(m.pendingPath())
 		return err
 	}
+	reportProfileProgress(ctx, "Applying profile")
 	if err := m.applyLiveConfig(ctx, state, candidate, live); err != nil {
 		return m.failProfileChange(state, pending, err)
 	}

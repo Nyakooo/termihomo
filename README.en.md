@@ -143,10 +143,12 @@ Install the Mihomo core before starting it: run <code>termihomo install</code>, 
 A typical first-run workflow:
 
 1. Open **Profile** and add a subscription URL or import a local Mihomo YAML file.
-2. Wait for the profile to pass validation.
+2. Follow the import progress until validation completes. Press **Esc** to cancel and keep your input, or **Ctrl+C** to cancel and exit.
 3. Start Mihomo from **Core** or the Overview page.
 4. Open **Proxies** and choose a node or policy-group option.
 5. Enable the system proxy or TUN from **Network** if needed.
+
+GeoIP, GeoSite, and ASN databases are bundled with the executable and extracted locally on first use. Importing a profile does not download these base databases. Subscriptions and additional proxy/rule providers may still require network access. The interface shows the current stage and elapsed time, and lets you retry after a timeout.
 
 The default local mixed-proxy address is <code>127.0.0.1:7890</code>. LAN access is disabled by default. Enabling TUN or changing system network settings may require additional system privileges.
 

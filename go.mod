@@ -2,7 +2,7 @@ module github.com/Nyakooo/termihomo
 
 go 1.26.0
 
-require golang.org/x/sys v0.47.0
+require golang.org/x/sys v0.50.0
 
 require go.yaml.in/yaml/v3 v3.0.6
 
@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/coder/websocket v1.8.15
 	github.com/godbus/dbus/v5 v5.1.0
+	github.com/oschwald/maxminddb-golang/v2 v2.9.1
 )
 
 require (
@@ -27,5 +28,5 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 )

@@ -49,8 +49,12 @@ func (m Manager) clearRuntimeFiles() error {
 
 	if info, err := os.Lstat(m.runDir()); err == nil && info.IsDir() {
 		generated := []string{"config.yaml", "config.yaml.bak", "cache.db"}
-		for _, file := range geodataFiles {
-			generated = append(generated, file.name)
+		files, err := geodataFiles()
+		if err != nil {
+			return err
+		}
+		for _, file := range files {
+			generated = append(generated, file.Name)
 		}
 		for _, name := range generated {
 			if err := remove(filepath.Join(m.runDir(), name)); err != nil {

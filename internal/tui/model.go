@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -181,12 +182,16 @@ type model struct {
 	retryInput               []rune
 	confirm                  func() error
 	confirmLabel             string
+	cancelProfile            context.CancelFunc
+	profileCancelling        bool
+	profileStarted           time.Time
 	profileUpdating          bool
 	profileSpinID            uint64
 	profileFrame             int
 	lifecycle                string
 	busy                     bool
 	cancelStartupInstall     context.CancelFunc
+	cancelOperation          context.CancelFunc
 	refreshing               bool
 	refreshAgain             bool
 	loaded                   bool
@@ -214,9 +219,11 @@ func Run(manager core.Manager, input io.Reader, output io.Writer, lang i18n.Lang
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	testCtx, cancelTests := context.WithCancel(ctx)
+	operationCtx, cancelOperation := context.WithCancel(ctx)
+	defer cancelOperation()
+	testCtx, cancelTests := context.WithCancel(operationCtx)
 	defer cancelTests()
-	m := &model{trayAvailable: tray.Available(), testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: ctx, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
+	m := &model{trayAvailable: tray.Available(), testCtx: testCtx, cancelTests: cancelTests, manager: manager.WithRuntimeCache(), lang: lang, settings: settings, style: newStyler(), ctx: operationCtx, cancelOperation: cancelOperation, width: 80, height: 24, logLevel: 1, refreshing: true, compactTerminal: runtime.GOOS == "android"}
 	if showNodes {
 		m.changePage(proxies)
 	}
@@ -368,7 +375,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.busy {
 			return m, tea.Quit
 		}
-		m.cancelInstallForExit()
+		m.cancelForExit()
 	case trayNodesMsg:
 		m.closeForm()
 		m.confirm, m.help, m.services.dialog = nil, false, false
@@ -401,15 +408,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateTray()
 		checks := m.refreshServices(previous)
 		autoRun := msg.toolSettings["app.auto-run"] == "true"
-		if m.ctx != nil && !m.proxyControllerAttempted && !m.busy &&
+		if m.ctx != nil && !m.exitPending && !m.proxyControllerAttempted && !m.busy &&
 			((msg.profile.Source != "" || autoRun) && (msg.status.State == "Stopped" || msg.status.State == "Failed") ||
 				autoRun && msg.status.State == "Paused") {
 			m.proxyControllerAttempted = true
-			return m, m.act(m.lang.Text("Load proxies"), func() error {
+			return m, m.profileAction(m.lang.Text("Load proxies"), func(ctx context.Context) error {
 				if autoRun {
-					return m.manager.StartDashboardProxy(m.ctx)
+					return m.manager.StartDashboardProxy(ctx)
 				}
-				return m.manager.EnsureProxyController(m.ctx)
+				return m.manager.EnsureProxyController(ctx)
 			})
 		}
 		if m.proxyControllerAvailable() {
@@ -463,12 +470,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	case profileProgress:
+		if m.cancelProfile != nil && !m.profileCancelling && msg.generation == m.profileSpinID {
+			m.feedback = m.lang.Text(msg.stage) + "…"
+		}
 	case profileSpin:
 		if m.profileUpdating && uint64(msg) == m.profileSpinID {
 			m.profileFrame++
 			return m, profileSpinTick(m.profileSpinID)
 		}
 	case operation:
+		profileCancelled := m.cancelProfile != nil && errors.Is(msg.err, context.Canceled)
+		if m.cancelProfile != nil {
+			m.cancelProfile()
+			m.cancelProfile = nil
+		}
+		m.profileCancelling = false
 		m.profileUpdating, m.cardUpdating = false, false
 		m.busy = false
 		m.cancelStartupInstall = nil
@@ -481,7 +498,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.feedback = msg.label + " · " + msg.detail
 		}
 		if msg.err != nil {
-			m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
+			if profileCancelled {
+				m.feedback = m.lang.Text("Profile operation cancelled")
+			} else {
+				m.feedback = m.lang.Text("Error · ") + m.lang.Error(msg.err)
+			}
 			if m.retryForm != "" {
 				m.openForm(m.retryForm, string(m.retryInput))
 				m.formPage, m.formField = m.retryPage, m.retryField
@@ -489,7 +510,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editProfileID, m.editProfileSource = m.retryProfileID, m.retryProfileSource
 				m.profileSchedule = m.retrySchedule
 				m.profileInterval = fmt.Sprint(m.retrySchedule.Interval())
-				m.formError = m.lang.Error(msg.err)
+				if !profileCancelled {
+					m.formError = m.lang.Error(msg.err)
+				}
 			}
 		}
 		m.retryForm, m.retryInput, m.retryName = "", nil, ""
