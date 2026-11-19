@@ -26,7 +26,8 @@ func TestValidateSimpleProfileUsesBundledGeodata(t *testing.T) {
 	if err := os.WriteFile(m.binary(), []byte("#!/bin/sh\nfor f in geoip.metadb GeoIP.dat GeoSite.dat ASN.mmdb; do [ -s \"$2/$f\" ] || exit 1; done\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// Race instrumentation makes first-time bundled database extraction slower.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := m.validateConfig(ctx, []byte("rules:\n  - MATCH,DIRECT\n")); err != nil {
 		t.Fatal(err)

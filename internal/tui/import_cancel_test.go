@@ -1,10 +1,12 @@
 package tui
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"context"
+	"errors"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestQuitCancelsBusyImport(t *testing.T) {
@@ -87,5 +89,63 @@ func TestProfileProgressIgnoresStaleAndCancelledStages(t *testing.T) {
 	m.Update(profileProgress{generation: m.profileSpinID, stage: "Saving profile"})
 	if m.feedback != before {
 		t.Fatal("queued progress overwrote cancellation")
+	}
+}
+
+func TestQuitClosesFailedImportThenExits(t *testing.T) {
+	m := richModel()
+	m.refreshing = true
+	m.retryForm, m.retryInput = "Subscription URL", []rune("https://example.org/sub")
+	m.Update(operation{err: errors.New("download failed")})
+	if m.form != "Subscription URL" || m.formError == "" {
+		t.Fatal("expected failed import form")
+	}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if cmd != nil || m.form != "" {
+		t.Fatal("first q must close failed import form")
+	}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if cmd == nil {
+		t.Fatal("second q must exit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("expected quit message")
+	}
+}
+
+func TestQuitAfterFailedImportCancelsBackgroundWork(t *testing.T) {
+	m := richModel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m.ctx, m.cancelOperation = ctx, cancel
+	m.refreshing = true
+	m.retryForm, m.retryInput = "Subscription URL", []rune("https://example.org/sub")
+	m.Update(operation{err: errors.New("download failed")})
+	m.handleKey("q", "q")
+	if ctx.Err() != nil {
+		t.Fatal("closing the error form must keep the interface alive")
+	}
+	cmd := m.handleKey("q", "q")
+	if cmd == nil {
+		t.Fatal("main-screen q must quit")
+	}
+	if !m.exitPending || ctx.Err() == nil {
+		t.Fatal("exit must cancel background work before shutting down")
+	}
+}
+
+func TestLateSnapshotCannotRestartWorkAfterQuit(t *testing.T) {
+	m := richModel()
+	m.refreshing = true
+	m.handleKey("q", "q")
+	_, cmd := m.Update(snapshot{})
+	if cmd == nil {
+		t.Fatal("late snapshot must preserve the exit request")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("late snapshot must quit instead of starting more work")
+	}
+	if m.busy {
+		t.Fatal("exit must not start another operation")
 	}
 }

@@ -2,10 +2,14 @@ package core
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,5 +174,66 @@ func TestSubscriptionDownloadDoesNotBlockStop(t *testing.T) {
 	cancel()
 	if err := <-done; err == nil {
 		t.Fatal("cancelled subscription download succeeded")
+	}
+}
+
+func TestSubscriptionFallsBackWhenEnvironmentProxyIsUnavailable(t *testing.T) {
+	const yaml = "proxies: []\nrules: [MATCH,DIRECT]\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(yaml)) }))
+	defer server.Close()
+	old := http.DefaultTransport
+	transport := old.(*http.Transport).Clone()
+	transport.Proxy = func(*http.Request) (*url.URL, error) { return url.Parse("http://127.0.0.1:0") }
+	http.DefaultTransport = transport
+	defer func() { http.DefaultTransport = old; transport.CloseIdleConnections() }()
+	item, err := downloadSubscription(t.Context(), server.URL, "", "")
+	if err != nil {
+		t.Fatalf("download through unavailable proxy should retry directly: %v", err)
+	}
+	if string(item.YAML) != yaml {
+		t.Fatal("unexpected subscription contents")
+	}
+}
+
+func TestSubscriptionRetriesCompatibleClientAfterConnectionRejected(t *testing.T) {
+	const yaml = "proxies: []\nrules: [MATCH,DIRECT]\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.UserAgent(), "FlClash/") {
+			_, _ = w.Write([]byte(yaml))
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+	item, err := downloadSubscription(t.Context(), server.URL, "", "")
+	if err != nil {
+		t.Fatalf("compatible client should recover rejected connection: %v", err)
+	}
+	if string(item.YAML) != yaml {
+		t.Fatal("unexpected subscription contents")
+	}
+}
+
+func TestSubscriptionNetworkErrorsHideSubscriptionCredentials(t *testing.T) {
+	secret := "https://user:password@example.org/private-token?token=secret"
+	for _, tc := range []struct {
+		cause error
+		want  string
+	}{
+		{&net.DNSError{Err: "lookup failed", Name: secret}, "DNS lookup failed"},
+		{&tls.CertificateVerificationError{Err: errors.New(secret)}, "TLS certificate verification failed"},
+		{&net.OpError{Op: "dial", Err: errors.New(secret)}, "network or proxy connection failed"},
+		{errors.New(secret), "connection interrupted or TLS handshake failed"},
+	} {
+		err := &url.Error{Op: "Get", URL: secret, Err: tc.cause}
+		got := subscriptionNetworkError(err).Error()
+		if !strings.Contains(got, tc.want) || strings.Contains(got, "secret") || strings.Contains(got, "password") || strings.Contains(got, "private-token") {
+			t.Fatalf("unexpected diagnostic: %s", got)
+		}
 	}
 }

@@ -65,6 +65,11 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 			}
 			return nil
 		}
+		m.exitPending = true
+		// Stop refreshes and network probes before asking Bubble Tea to shut down.
+		if m.cancelOperation != nil {
+			m.cancelOperation()
+		}
 		if m.cancelTests != nil {
 			m.cancelTests()
 		}

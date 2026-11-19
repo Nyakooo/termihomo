@@ -357,6 +357,11 @@ var zh = map[string]string{
 	"↑ %s/s  ↓ %s/s  ·  total ↑ %s ↓ %s":                            "↑ %s/s  ↓ %s/s  ·  累计 ↑ %s ↓ %s",
 	"↑ ↓ / j k   Move selection":                                    "↑ ↓ / j k   移动选择",
 
+	"Subscription download failed: DNS lookup failed":                              "下载订阅失败：DNS 解析失败",
+	"Subscription download failed: TLS certificate verification failed":            "下载订阅失败：TLS 证书验证失败",
+	"Subscription download failed: network or proxy connection failed":             "下载订阅失败：网络或代理连接失败",
+	"Subscription download failed: connection interrupted or TLS handshake failed": "下载订阅失败：连接中断或 TLS 握手失败",
+
 	"Terminal too small":              "终端尺寸过小",
 	"Minimum display size is %d×%d":   "最小展示尺寸为 %d×%d",
 	"Current size %d×%d":              "当前尺寸 %d×%d",

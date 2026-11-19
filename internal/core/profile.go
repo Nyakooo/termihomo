@@ -338,6 +338,8 @@ func readProfileBody(reader io.Reader) ([]byte, error) {
 }
 
 func downloadSubscription(ctx context.Context, source, previousName, customName string) (profile, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
 	reportProfileProgress(ctx, "Downloading profile")
 	parsed, err := url.Parse(source)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
@@ -354,11 +356,12 @@ func downloadSubscription(ctx context.Context, source, previousName, customName 
 		},
 	}
 	body, headers, err := requestSubscription(ctx, client, source, "mihomo/"+Version+" Termihomo")
-	if err != nil {
+	if err != nil && ctx.Err() != nil {
 		return profile{}, err
 	}
-	if isProxyLinkList(body) {
-		// Some providers only return a complete Mihomo profile to known clients.
+	if err != nil || isProxyLinkList(body) {
+		// Providers may reject unknown clients at the HTTP or connection level,
+		// or return node links instead of a complete Mihomo profile.
 		body, headers, err = requestSubscription(ctx, client, source, "FlClash/0.9.3")
 		if err != nil {
 			return profile{}, err
@@ -373,38 +376,6 @@ func downloadSubscription(ctx context.Context, source, previousName, customName 
 	}
 	return profile{ProfileInfo: ProfileInfo{Source: "subscription", Name: name, CustomName: customName,
 		Quota: parseSubscriptionQuota(headers.Get("Subscription-Userinfo"))}, URL: source, YAML: body}, nil
-}
-
-func requestSubscription(ctx context.Context, client *http.Client, source, userAgent string) ([]byte, http.Header, error) {
-	requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-	downloadError := func(fallback error) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if requestCtx.Err() != nil {
-			return i18n.Message("Subscription download timed out; check the link and retry")
-		}
-		return fallback
-	}
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, source, nil)
-	if err != nil {
-		return nil, nil, i18n.Message("invalid subscription request")
-	}
-	req.Header.Set("User-Agent", userAgent)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, downloadError(i18n.Message("subscription download failed"))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, i18n.Errorf("subscription server returned HTTP %d", resp.StatusCode)
-	}
-	body, err := readProfileBody(resp.Body)
-	if err != nil {
-		return nil, nil, downloadError(err)
-	}
-	return normalizeSubscription(body), resp.Header, nil
 }
 
 func isProxyLinkList(body []byte) bool {

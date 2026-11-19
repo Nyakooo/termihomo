@@ -369,6 +369,10 @@ func (m *model) act(label string, run func() error) tea.Cmd {
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// A late refresh must not restart work after the user requested exit.
+	if m.exitPending && !m.busy {
+		return m, tea.Quit
+	}
 	switch msg := msg.(type) {
 	case trayExitMsg:
 		m.exitPending = true
