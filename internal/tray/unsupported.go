@@ -11,6 +11,6 @@ import (
 func supported() bool                                               { return false }
 func HandleWorker([]string, func(platform.Paths) DesktopState) bool { return false }
 
-func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
-	return directWorker(executable, executable), func() {}, nil
+func workerCommand(executable string, paths platform.Paths) (*exec.Cmd, func(), error) {
+	return directWorker(executable, executable, paths), func() {}, nil
 }

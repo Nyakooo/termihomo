@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/Nyakooo/termihomo/internal/platform"
@@ -52,8 +53,13 @@ func waitForDesktop(ctx context.Context, enabled, available func() bool, interva
 }
 
 func workerEnvironment(paths platform.Paths) []string {
-	return append(os.Environ(), "GH_TOKEN=", "GITHUB_TOKEN=",
-		"XDG_CONFIG_HOME="+filepath.Dir(paths.Config),
-		"XDG_DATA_HOME="+filepath.Dir(paths.Data),
-		"XDG_STATE_HOME="+filepath.Dir(filepath.Dir(paths.Logs)))
+	env := append(os.Environ(), "GH_TOKEN=", "GITHUB_TOKEN=")
+	// Linux terminal launches also use the saved XDG directories. Native Windows
+	// and macOS config/data directories cannot be represented as XDG base paths.
+	if runtime.GOOS == "linux" {
+		env = append(env, "XDG_CONFIG_HOME="+filepath.Dir(paths.Config),
+			"XDG_DATA_HOME="+filepath.Dir(paths.Data),
+			"XDG_STATE_HOME="+filepath.Dir(filepath.Dir(paths.Logs)))
+	}
+	return env
 }

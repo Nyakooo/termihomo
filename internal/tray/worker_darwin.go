@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"fyne.io/systray"
+	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
 //go:embed icon.png
@@ -42,7 +43,7 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
+func workerCommand(executable string, paths platform.Paths) (*exec.Cmd, func(), error) {
 	dir, err := os.MkdirTemp("", "termihomo-tray-")
 	if err != nil {
 		return nil, nil, err
@@ -64,7 +65,7 @@ func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	command := directWorker(target, executable)
+	command := directWorker(target, executable, paths)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return command, cleanup, nil
 }

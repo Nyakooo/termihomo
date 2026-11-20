@@ -16,16 +16,16 @@ import (
 
 // HandleWorker runs the platform menu loop on the initial OS thread.
 func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
-	if len(args) != 2 || args[0] != workerArg {
+	if len(args) == 0 || args[0] != workerArg {
 		// The tray library locks the startup thread in init.
 		runtime.UnlockOSThread()
 		return false
 	}
 	defer cleanupWorker()
-	if !filepath.IsAbs(args[1]) {
+	if len(args) != 5 || !filepath.IsAbs(args[1]) {
 		return true
 	}
-	paths, err := platform.ResolvePaths()
+	paths, err := workerPaths(args[2:])
 	if err != nil {
 		return true
 	}

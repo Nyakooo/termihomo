@@ -110,7 +110,7 @@ func Start(paths platform.Paths) error {
 		lock.Close()
 		return err
 	}
-	command, cleanup, err := workerCommand(executable, paths.Data)
+	command, cleanup, err := workerCommand(executable, paths)
 	lock.Close()
 	if err != nil {
 		return err
@@ -124,6 +124,19 @@ func Start(paths platform.Paths) error {
 	return nil
 }
 
-func directWorker(executable, launcher string) *exec.Cmd {
-	return exec.Command(executable, workerArg, launcher)
+func directWorker(executable, launcher string, paths platform.Paths) *exec.Cmd {
+	return exec.Command(executable, workerArg, launcher, paths.Config, paths.Data, paths.Logs)
+}
+
+// workerPaths preserves native and custom directory layouts across processes.
+func workerPaths(args []string) (platform.Paths, error) {
+	if len(args) != 3 {
+		return platform.Paths{}, errors.New("invalid tray worker directories")
+	}
+	for _, path := range args {
+		if !filepath.IsAbs(path) {
+			return platform.Paths{}, errors.New("tray worker directories must be absolute")
+		}
+	}
+	return platform.Paths{Config: args[0], Data: args[1], Logs: args[2]}, nil
 }

@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"fyne.io/systray"
+	"github.com/Nyakooo/termihomo/internal/platform"
 	"golang.org/x/sys/windows"
 )
 
@@ -46,15 +47,15 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable, dataDir string) (*exec.Cmd, func(), error) {
+func workerCommand(executable string, paths platform.Paths) (*exec.Cmd, func(), error) {
 	// Use a separate image so a resident tray cannot lock termihomo.exe during updates.
-	target := filepath.Join(dataDir, "tray-worker.exe")
+	target := filepath.Join(paths.Data, "tray-worker.exe")
 	input, err := os.Open(executable)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer input.Close()
-	file, err := os.CreateTemp(dataDir, ".tray-worker-*.exe")
+	file, err := os.CreateTemp(paths.Data, ".tray-worker-*.exe")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -66,7 +67,7 @@ func workerCommand(executable, dataDir string) (*exec.Cmd, func(), error) {
 	if err := os.Rename(file.Name(), target); err != nil {
 		return nil, nil, err
 	}
-	cmd := directWorker(target, executable)
+	cmd := directWorker(target, executable, paths)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return cmd, func() {}, nil
 }

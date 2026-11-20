@@ -12,6 +12,7 @@ import (
 
 	"fyne.io/systray"
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"github.com/Nyakooo/termihomo/internal/platform"
 	"github.com/godbus/dbus/v5"
 )
 
@@ -47,8 +48,8 @@ func setIcon(active bool) {
 	}
 }
 
-func workerCommand(executable, _ string) (*exec.Cmd, func(), error) {
-	command := directWorker(executable, executable)
+func workerCommand(executable string, paths platform.Paths) (*exec.Cmd, func(), error) {
+	command := directWorker(executable, executable, paths)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return command, func() {}, nil
 }
