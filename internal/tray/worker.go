@@ -47,7 +47,7 @@ func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
 		systray.SetTooltip("Termihomo")
 		title := systray.AddMenuItem("Termihomo", "")
 		systray.AddSeparator()
-		var items [5]*systray.MenuItem
+		var items [6]*systray.MenuItem
 		for i := range items {
 			items[i] = systray.AddMenuItem("—", "")
 			if i > 0 {
@@ -95,13 +95,16 @@ func HandleWorker(args []string, state func(platform.Paths) DesktopState) bool {
 				case <-items[1].ClickedCh:
 					apply(desktop.CycleMode)
 					requestRefresh()
-				case <-items[2].ClickedCh:
+				case <-items[3].ClickedCh:
 					apply(desktop.ToggleTUN)
 					requestRefresh()
-				case <-items[3].ClickedCh:
+				case <-items[4].ClickedCh:
 					apply(desktop.ToggleLAN)
 					requestRefresh()
-				case <-items[4].ClickedCh:
+				case <-items[2].ClickedCh:
+					apply(desktop.ToggleSystemProxy)
+					requestRefresh()
+				case <-items[5].ClickedCh:
 					feedback.Hide()
 					select {
 					case test <- struct{}{}:
@@ -186,7 +189,7 @@ func waitForInterface(ctx context.Context, paths platform.Paths) error {
 	}
 }
 
-func updateSummaries(ctx context.Context, items [5]*systray.MenuItem, read ReadSummary, refresh, test <-chan struct{}, requestRefresh func(), nodeMenu *sync.Mutex) {
+func updateSummaries(ctx context.Context, items [6]*systray.MenuItem, read ReadSummary, refresh, test <-chan struct{}, requestRefresh func(), nodeMenu *sync.Mutex) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var previous Summary
@@ -199,7 +202,7 @@ func updateSummaries(ctx context.Context, items [5]*systray.MenuItem, read ReadS
 			return
 		}
 		if first || summary.Running != previous.Running {
-			for _, item := range items[1:4] {
+			for _, item := range []*systray.MenuItem{items[1], items[3], items[4]} {
 				if summary.Running {
 					item.Enable()
 				} else {
@@ -207,11 +210,18 @@ func updateSummaries(ctx context.Context, items [5]*systray.MenuItem, read ReadS
 				}
 			}
 		}
+		if first || summary.CanToggleSystemProxy != previous.CanToggleSystemProxy {
+			if summary.CanToggleSystemProxy {
+				items[2].Enable()
+			} else {
+				items[2].Disable()
+			}
+		}
 		if first || summary.CanTest != previous.CanTest {
 			if summary.CanTest {
-				items[4].Enable()
+				items[5].Enable()
 			} else {
-				items[4].Disable()
+				items[5].Disable()
 			}
 		}
 		if first || summary.Active != previous.Active {

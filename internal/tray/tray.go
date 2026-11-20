@@ -24,20 +24,22 @@ const (
 )
 
 type Summary struct {
-	Active  bool
-	Running bool
-	CanTest bool
-	Lines   [5]string
+	Active               bool
+	Running              bool
+	CanTest              bool
+	CanToggleSystemProxy bool
+	Lines                [6]string
 }
 
 type ReadSummary func(ctx context.Context, test bool, refresh func()) Summary
 type DesktopState struct {
-	Enabled   func() bool
-	Read      ReadSummary
-	Pause     func(context.Context) error
-	CycleMode func(context.Context) error
-	ToggleTUN func(context.Context) error
-	ToggleLAN func(context.Context) error
+	Enabled           func() bool
+	Read              ReadSummary
+	Pause             func(context.Context) error
+	CycleMode         func(context.Context) error
+	ToggleTUN         func(context.Context) error
+	ToggleLAN         func(context.Context) error
+	ToggleSystemProxy func(context.Context) error
 }
 
 func Available() bool { return supported() }

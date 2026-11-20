@@ -22,8 +22,7 @@ var icon []byte
 var grayIcon []byte
 
 func supported() bool {
-	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" ||
-		(os.Getenv("WAYLAND_DISPLAY") == "" && os.Getenv("DISPLAY") == "") {
+	if os.Getenv("WAYLAND_DISPLAY") == "" && os.Getenv("DISPLAY") == "" {
 		return false
 	}
 	bus, err := dbus.ConnectSessionBus()

@@ -12,10 +12,19 @@ import (
 )
 
 func TestSystemProxyRestoresOnlyOwnedSettings(t *testing.T) {
+	testSystemProxyRestoresOnlyOwnedSettings(t, "fake-session")
+}
+
+func TestSystemProxyWithoutBusEnvironment(t *testing.T) {
+	testSystemProxyRestoresOnlyOwnedSettings(t, "")
+}
+
+func testSystemProxyRestoresOnlyOwnedSettings(t *testing.T, busAddress string) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME")
-	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "fake-session")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", busAddress)
 	t.Setenv("TEST_PROXY_DIR", dir)
 	script := "#!/bin/sh\npath=\"$TEST_PROXY_DIR/$2.$3\"\ncase $1 in\nlist-recursively) for f in \"$TEST_PROXY_DIR\"/org.gnome.system.proxy.*; do name=${f##*/}; printf '%s %s %s\\n' \"${name%.*}\" \"${name##*.}\" \"$(cat \"$f\")\"; done;;\nget) cat \"$path\";;\nset) printf '%s' \"$4\" > \"$path\";;\nesac\n"
 	if err := os.WriteFile(filepath.Join(dir, "gsettings"), []byte(script), 0o700); err != nil {
@@ -105,5 +114,13 @@ func TestSystemProxyRestoresOnlyOwnedSettings(t *testing.T) {
 	}
 	if m.SystemProxy(ctx).Enabled {
 		t.Fatal("explicitly confirmed external proxy should be disabled")
+	}
+}
+
+func TestDisableUnownedSystemProxyWithoutDesktop(t *testing.T) {
+	t.Setenv("XDG_CURRENT_DESKTOP", "")
+	m := Manager{Paths: platform.Paths{Data: t.TempDir()}}
+	if err := m.disableSystemProxy(t.Context(), ""); err != nil {
+		t.Fatalf("restoring a proxy never owned by Termihomo should be a no-op: %v", err)
 	}
 }

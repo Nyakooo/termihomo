@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,13 +74,19 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 		Enabled: manager.TrayEnabled,
 		Read: func(ctx context.Context, test bool, refresh func()) tray.Summary {
 			readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			runtime := manager.ReadTrayRuntime(readCtx)
+			var runtime core.RuntimeSnapshot
+			var proxy core.SystemProxy
+			var reads sync.WaitGroup
+			reads.Go(func() { runtime = manager.ReadTrayRuntime(readCtx) })
+			reads.Go(func() { proxy = manager.SystemProxy(readCtx) })
+			reads.Wait()
 			cancel()
 			m := model{
 				lang: i18n.Saved(paths.Config),
 				snapshot: snapshot{
 					status: runtime.Status, overview: runtime.Overview,
 					proxies: runtime.Proxies, rules: runtime.Rules, proxyErr: runtime.ProxyErr,
+					systemProxy: proxy,
 				},
 			}
 			node := ""
@@ -120,7 +127,7 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 			summary := m.traySummary()
 			summary.CanTest = node != "" && pending == nil
 			if pending != nil {
-				summary.Lines[4] = m.lang.Text("Latency") + " · " + m.lang.Text("Testing…")
+				summary.Lines[5] = m.lang.Text("Latency") + " · " + m.lang.Text("Testing…")
 			}
 			return summary
 		},
@@ -144,6 +151,13 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 				return err
 			}
 			return manager.SetTUN(ctx, !overview.TUN && !overview.TUNConfigured)
+		},
+		ToggleSystemProxy: func(ctx context.Context) error {
+			proxy := manager.SystemProxy(ctx)
+			if !proxy.Available {
+				return i18n.Message("System proxy settings unavailable")
+			}
+			return manager.SetSystemProxy(ctx, !proxy.Enabled, "")
 		},
 		ToggleLAN: func(ctx context.Context) error {
 			overview, err := activeOverview(ctx)
@@ -181,12 +195,25 @@ func (m *model) traySummary() tray.Summary {
 			}
 		}
 	}
+	proxy := m.snapshot.systemProxy
+	proxyLabel := "System proxy unavailable"
+	if proxy.Available {
+		proxyLabel = "System proxy off"
+		if proxy.Enabled {
+			proxyLabel = "System proxy on"
+			if !proxy.Owned {
+				proxyLabel = "System proxy on (external)"
+			}
+		}
+	}
 	return tray.Summary{
-		Active:  m.kernelActive(),
-		Running: m.snapshot.status.State == "Running",
-		Lines: [5]string{
+		Active:               m.kernelActive(),
+		Running:              m.snapshot.status.State == "Running",
+		CanToggleSystemProxy: proxy.Available && ((proxy.Enabled && proxy.Owned) || (!proxy.Enabled && m.snapshot.status.State == "Running")),
+		Lines: [6]string{
 			m.lang.Text("Current node") + " · " + node,
 			m.lang.Text("Routing mode") + " · " + mode,
+			m.lang.Text(proxyLabel),
 			m.lang.Text(m.tunLabel()),
 			m.lang.Text(lan),
 			m.lang.Text("Latency") + " · " + delay,

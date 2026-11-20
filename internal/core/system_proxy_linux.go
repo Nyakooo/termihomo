@@ -36,8 +36,8 @@ func proxyCommand(ctx context.Context, verb string, setting proxySetting, values
 }
 
 func readSystemProxy(ctx context.Context) ([]string, error) {
-	if runtime.GOOS == "android" || os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" || !strings.Contains(strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP")), "gnome") {
-		return nil, os.ErrNotExist
+	if runtime.GOOS == "android" || !strings.Contains(strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP")), "gnome") {
+		return nil, i18n.Message("System proxy settings unavailable")
 	}
 	out, err := exec.CommandContext(ctx, "gsettings", "list-recursively", proxySchema).Output()
 	if err != nil {
@@ -221,6 +221,9 @@ func (m Manager) enableSystemProxy(ctx context.Context, address string, replace 
 
 func (m Manager) disableSystemProxy(ctx context.Context, externalRevision string) error {
 	owner, path := m.proxyOwnership()
+	if len(owner.Applied) == 0 && externalRevision == "" {
+		return nil
+	}
 	current, err := readSystemProxy(ctx)
 	if err != nil {
 		return err

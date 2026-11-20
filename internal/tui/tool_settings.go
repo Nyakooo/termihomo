@@ -19,11 +19,7 @@ type dnsQueryDone struct {
 }
 
 func (m *model) generalToolFields() []core.ToolField {
-	fields := core.GeneralToolFields
-	if !m.trayAvailable && fields[len(fields)-1].Key == core.SystemTrayKey {
-		fields = fields[:len(fields)-1]
-	}
-	return fields
+	return core.GeneralToolFields
 }
 
 func (m *model) toolPage(height int) []string {
