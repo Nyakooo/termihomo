@@ -182,9 +182,9 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 func (m *model) traySummary() tray.Summary {
 	node, delay := "—", "—"
 	mode := orDash(m.lang.Text(m.snapshot.overview.Mode))
-	lan := "LAN proxy off"
+	lan := "off"
 	if m.snapshot.overview.LAN {
-		lan = "LAN proxy on"
+		lan = "on"
 	}
 	if m.snapshot.status.State == "Running" {
 		selected := serviceNode(m.snapshot)
@@ -196,15 +196,26 @@ func (m *model) traySummary() tray.Summary {
 		}
 	}
 	proxy := m.snapshot.systemProxy
-	proxyLabel := "System proxy unavailable"
+	proxyLabel := "Unavailable"
 	if proxy.Available {
-		proxyLabel = "System proxy off"
+		proxyLabel = "off"
 		if proxy.Enabled {
-			proxyLabel = "System proxy on"
+			proxyLabel = "on"
 			if !proxy.Owned {
-				proxyLabel = "System proxy on (external)"
+				proxyLabel = "on (external)"
 			}
 		}
+	}
+	tun := "off"
+	switch m.tunLabel() {
+	case "TUN on":
+		tun = "on"
+	case "TUN paused":
+		tun = "paused"
+	case "TUN inactive":
+		tun = "inactive"
+	case "TUN unavailable":
+		tun = "Unavailable"
 	}
 	return tray.Summary{
 		Active:               m.kernelActive(),
@@ -213,9 +224,9 @@ func (m *model) traySummary() tray.Summary {
 		Lines: [6]string{
 			m.lang.Text("Current node") + " · " + node,
 			m.lang.Text("Routing mode") + " · " + mode,
-			m.lang.Text(proxyLabel),
-			m.lang.Text(m.tunLabel()),
-			m.lang.Text(lan),
+			m.lang.Text("System proxy") + " · " + m.lang.Text(proxyLabel),
+			"TUN · " + m.lang.Text(tun),
+			m.lang.Text("LAN proxy") + " · " + m.lang.Text(lan),
 			m.lang.Text("Latency") + " · " + delay,
 		},
 	}

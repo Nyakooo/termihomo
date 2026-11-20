@@ -992,14 +992,14 @@ func TestTraySummaryUsesSelectedNodeAndItsDelay(t *testing.T) {
 	m.delays = map[string]core.DelayResult{"Hong Kong": {Milliseconds: 42}}
 	summary := m.traySummary()
 	if !summary.Active || summary.Lines[0] != "Current node · Hong Kong" || summary.Lines[1] != "Routing mode · global" ||
-		summary.Lines[3] != "TUN on" || summary.Lines[4] != "LAN proxy on" || summary.Lines[5] != "Latency · 42 ms" {
+		summary.Lines[3] != "TUN · on" || summary.Lines[4] != "LAN proxy · on" || summary.Lines[5] != "Latency · 42 ms" {
 		t.Fatalf("unexpected tray summary: %v", summary)
 	}
 
 	m.snapshot.status.State, m.snapshot.status.ResumeTUN, m.snapshot.overview.TUN = "Paused", true, false
 	m.snapshot.overview.LAN = false
 	summary = m.traySummary()
-	if summary.Active || summary.Lines[3] != "TUN paused" || summary.Lines[4] != "LAN proxy off" || summary.Lines[5] != "Latency · —" {
+	if summary.Active || summary.Lines[3] != "TUN · paused" || summary.Lines[4] != "LAN proxy · off" || summary.Lines[5] != "Latency · —" {
 		t.Fatalf("unexpected paused tray summary: %v", summary)
 	}
 }
@@ -1012,12 +1012,12 @@ func TestTraySystemProxyStatus(t *testing.T) {
 		label     string
 		canToggle bool
 	}{
-		{"unavailable", core.SystemProxy{}, true, "System proxy unavailable", false},
-		{"off", core.SystemProxy{Available: true}, true, "System proxy off", true},
-		{"stopped", core.SystemProxy{Available: true}, false, "System proxy off", false},
-		{"owned", core.SystemProxy{Available: true, Enabled: true, Owned: true}, true, "System proxy on", true},
-		{"owned while stopped", core.SystemProxy{Available: true, Enabled: true, Owned: true}, false, "System proxy on", true},
-		{"external", core.SystemProxy{Available: true, Enabled: true}, true, "System proxy on (external)", false},
+		{"unavailable", core.SystemProxy{}, true, "System proxy · Unavailable", false},
+		{"off", core.SystemProxy{Available: true}, true, "System proxy · off", true},
+		{"stopped", core.SystemProxy{Available: true}, false, "System proxy · off", false},
+		{"owned", core.SystemProxy{Available: true, Enabled: true, Owned: true}, true, "System proxy · on", true},
+		{"owned while stopped", core.SystemProxy{Available: true, Enabled: true, Owned: true}, false, "System proxy · on", true},
+		{"external", core.SystemProxy{Available: true, Enabled: true}, true, "System proxy · on (external)", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := richModel()

@@ -455,6 +455,8 @@ var zh = map[string]string{
 	"Routing and nodes":                        "代理模式与节点",
 	"Start Mihomo to apply changes":            "请先启动 Mihomo",
 	"i install · a start · x stop · Ctrl+R restart": "i 安装 · a 启动 · x 停止 · Ctrl+R 重启",
+	"on (external)":                        "开（外部）",
+	"inactive":                             "未生效",
 	"on":                                   "开",
 	"off":                                  "关",
 	"External":                             "外部",
