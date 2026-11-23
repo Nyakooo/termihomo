@@ -174,6 +174,10 @@ Common commands:
 | <code>termihomo uninstall</code> | Uninstall Termihomo and keep user configuration |
 | <code>termihomo start</code> / <code>stop</code> | Start or stop the background core |
 | <code>termihomo restart</code> / <code>reload</code> | Restart the core or reload its configuration |
+| <code>termihomo down</code> | Close interfaces, stop the core, and restore owned system proxy settings |
+| <code>termihomo tun start\|stop\|status</code> | Control TUN or query its state |
+| <code>termihomo sysproxy start\|stop\|status</code> | Control the system proxy or query its state |
+| <code>termihomo mode rule\|global\|direct\|status</code> | Change or query routing mode |
 | <code>termihomo status --json</code> | Print machine-readable status |
 | <code>termihomo profile add URL</code> | Add a subscription |
 | <code>termihomo profile import FILE</code> | Import a local YAML profile |

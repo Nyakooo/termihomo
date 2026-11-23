@@ -174,6 +174,10 @@ termihomo logs -f
 | <code>termihomo uninstall</code> | 卸载程序并保留配置 |
 | <code>termihomo start</code> / <code>stop</code> | 启动或停止后台内核 |
 | <code>termihomo restart</code> / <code>reload</code> | 重启内核或重新加载配置 |
+| <code>termihomo down</code> | 退出托盘和终端界面、停止内核并恢复接管的系统代理 |
+| <code>termihomo tun start\|stop\|status</code> | 控制 TUN 或查询状态 |
+| <code>termihomo sysproxy start\|stop\|status</code> | 控制系统代理或查询状态 |
+| <code>termihomo mode rule\|global\|direct\|status</code> | 切换或查询路由模式 |
 | <code>termihomo status --json</code> | 输出机器可读的状态信息 |
 | <code>termihomo profile add URL</code> | 添加订阅 |
 | <code>termihomo profile import FILE</code> | 导入本地 YAML 配置 |

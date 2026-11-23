@@ -34,11 +34,18 @@ Commands:
   update     Update the Termihomo executable
   uninstall  Remove Termihomo and its runtime files, keeping user configuration
   start      Start the managed Mihomo in the background
+  down       Close interfaces, stop Mihomo, and restore owned system proxy settings
   stop       Stop the managed Mihomo
   reload     Reload the current configuration in the running process
   restart    Restart the managed Mihomo process
   status [--json]  Show process and controller state
-  tun start|stop     Enable or disable TUN on the running core
+  tun start|stop        Enable or disable TUN
+  tun status [--json]    Inspect TUN state
+  sysproxy start|stop    Enable or restore the system proxy
+  sysproxy stop --yes    Confirm disabling an external proxy
+  sysproxy status [--json]  Inspect system proxy state
+  mode rule|global|direct   Change routing mode
+  mode status [--json]      Inspect routing mode
   profile list        Show the active profile
   profile import FILE [--yes] Import a local Mihomo YAML file
   profile add URL [--yes]     Add a subscription (use - to read the URL from stdin)
@@ -62,11 +69,18 @@ const helpZH = `用法：termihomo [--lang en|zh-CN] [命令]
   update                      更新 Termihomo 程序
   uninstall                   卸载程序并清理运行文件，保留用户配置
   start                       在后台启动托管的 Mihomo
+  down                        退出界面、停止内核并恢复接管的系统代理
   stop                        停止内核
   reload                      在当前进程中重新加载配置
   restart                     重启内核进程
   status [--json]             查看进程和控制接口状态
-  tun start|stop              开启或关闭运行中内核的 TUN
+  tun start|stop              开启或关闭 TUN
+  tun status [--json]          查询 TUN 状态
+  sysproxy start|stop          开启或恢复系统代理
+  sysproxy stop --yes          确认关闭外部代理
+  sysproxy status [--json]     查询系统代理状态
+  mode rule|global|direct      切换路由模式
+  mode status [--json]         查询路由模式
   profile list                查看当前配置
   profile import FILE [--yes] 导入本地 Mihomo YAML
   profile add URL [--yes]     添加订阅（用 - 从标准输入读取地址）
@@ -214,7 +228,8 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 	if confirmed {
 		args = args[:len(args)-1]
 	}
-	mayConfirm := args[0] == "stop" || args[0] == "restart" ||
+	mayConfirm := args[0] == "stop" || args[0] == "restart" || args[0] == "down" ||
+		(args[0] == "sysproxy" && len(args) == 2 && args[1] == "stop") ||
 		(args[0] == "profile" && len(args) >= 2 && args[1] != "list")
 	if !validManagedCommand(args) || (confirmed && !mayConfirm) {
 		fmt.Fprintln(stderr, lang.Text("unknown command or arguments; run termihomo --help"))
@@ -260,6 +275,8 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		}
 	case "start":
 		err = manager.Start(ctx)
+	case "down":
+		err = runDown(ctx, manager)
 	case "stop":
 		err = manager.Stop()
 	case "reload":
@@ -270,15 +287,11 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 	case "restart":
 		err = manager.Restart(ctx)
 	case "tun":
-		enable := args[1] == "start"
-		err = manager.SetTUN(ctx, enable)
-		if err == nil {
-			message := "TUN disabled"
-			if enable {
-				message = "TUN enabled"
-			}
-			fmt.Fprintln(stdout, lang.Text(message))
-		}
+		err = runTUN(ctx, manager, args[1:], stdout, lang)
+	case "sysproxy":
+		err = runSystemProxy(ctx, manager, args[1:], confirmed, stdin, stdout, stderr, lang)
+	case "mode":
+		err = runMode(ctx, manager, args[1:], stdout, lang)
 	case "logs":
 		err = runLogs(ctx, manager, len(args) == 2, stdout, stderr, lang)
 	case "config":
@@ -337,10 +350,22 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 }
 
 func validManagedCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
 	switch args[0] {
-	case "install", "start", "stop", "reload", "restart":
+	case "install", "start", "stop", "down", "reload", "restart":
 		return len(args) == 1
-	case "tun":
+	case "tun", "sysproxy", "mode":
+		if len(args) < 2 {
+			return false
+		}
+		if args[1] == "status" {
+			return len(args) == 2 || (len(args) == 3 && args[2] == "--json")
+		}
+		if args[0] == "mode" {
+			return len(args) == 2 && (args[1] == "rule" || args[1] == "global" || args[1] == "direct")
+		}
 		return len(args) == 2 && (args[1] == "start" || args[1] == "stop")
 	case "status":
 		return len(args) == 1 || (len(args) == 2 && args[1] == "--json")

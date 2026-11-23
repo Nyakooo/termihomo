@@ -80,7 +80,14 @@ func (m Manager) SetTUN(ctx context.Context, enable bool) error {
 		if err := m.setTUN(ctx, &state, enable); err != nil {
 			return err
 		}
-		return m.saveNetworkPreference(tunPreference, enable)
+		if err := m.saveNetworkPreference(tunPreference, enable); err != nil {
+			return err
+		}
+		if !enable && state.ResumeTUN {
+			state.ResumeTUN = false
+			return m.writeInstance(state)
+		}
+		return nil
 	})
 }
 

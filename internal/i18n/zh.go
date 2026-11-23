@@ -660,4 +660,7 @@ var zh = map[string]string{
 
 	"Mouse":                               "鼠标",
 	"Click tabs and rows · wheel scrolls": "点击标签和行 · 滚轮滚动",
+
+	"Could not restore system proxy: %s":             "无法恢复系统代理：%s",
+	"System proxy is managed by another application": "系统代理由其他程序管理",
 }

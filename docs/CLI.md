@@ -46,6 +46,7 @@ termihomo status
 termihomo reload
 termihomo restart
 termihomo stop
+termihomo down
 ```
 
 - `start`：启动由 Termihomo 管理的 Mihomo 后台进程；若已启用系统托盘且当前桌面支持托盘，同时补启托盘。
@@ -53,6 +54,7 @@ termihomo stop
 - `reload`：在当前进程中重新加载配置。端口等启动参数变更可能需要重启。
 - `restart`：停止并重新启动内核，现有连接会中断；同样按系统托盘设置补启托盘，已有托盘不会重复启动。
 - `stop`：停止托管的内核进程，恢复 Termihomo 接管的系统代理；保留托盘和终端界面，托盘会刷新为停止状态。
+- `down`：退出托盘和终端界面、停止内核并恢复接管的系统代理；保留配置、托盘开关与开机启动设置。
 
 状态支持 JSON 输出：
 
@@ -65,9 +67,53 @@ termihomo status --json
 ```sh
 termihomo tun start
 termihomo tun stop
+termihomo tun status
+termihomo tun status --json
 ```
 
 开启 TUN 通常需要系统网络管理权限。请先确认当前操作系统和运行环境满足 Mihomo 的 TUN 要求。
+
+### 系统代理
+
+```sh
+termihomo sysproxy start
+termihomo sysproxy stop
+termihomo sysproxy status
+termihomo sysproxy status --json
+```
+
+开启系统代理要求内核运行。关闭默认只恢复 Termihomo 接管的设置；如果当前代理由其他程序设置，需要交互确认，非交互执行使用 `termihomo sysproxy stop --yes`。确认后会校验代理设置是否变化，再关闭外部代理。`sysproxy start` 不会覆盖外部代理。
+
+### 路由模式
+
+```sh
+termihomo mode rule
+termihomo mode global
+termihomo mode direct
+termihomo mode status
+termihomo mode status --json
+```
+
+切换和查询当前路由模式要求内核控制接口可用。TUN、系统代理和路由模式操作后，托盘和终端界面会自动刷新。JSON 状态字段不随界面语言变化：TUN 返回 `state`、`available`、`enabled`、`configured`、`paused`；系统代理返回 `available`、`enabled`、`owned`；路由模式返回 `mode`。系统代理和 TUN 的状态查询在不可用时仍返回 JSON，并将 `available` 设为 `false`。
+
+### 平台与脚本说明
+
+- 系统代理：Windows 操作当前用户的系统代理；macOS 操作当前网络服务；Linux 目前支持 GNOME 桌面代理设置；Android 不支持此系统代理接口。
+- TUN：Linux、macOS 和 Windows 沿用内核的网络管理权限与授权要求；Android 需要 VPN 应用，命令不会绕过平台权限。
+- `tun status --json` 中的 `available` 表示当前内核和权限下的可用性，不是对操作系统永久能力的判断；`paused` 表示暂停时保留的 TUN 恢复意图。执行 `tun stop` 后会清除恢复意图。
+- `down` 等待界面退出最多 10 秒；即使界面退出失败，仍会尝试停止内核。界面退出或系统代理恢复失败会返回非零退出码，不会静默宣称完成。
+- 查询当前路由模式需要可用的控制接口；平台不支持系统代理或内核未运行时，对应状态查询会报告不可用。配置损坏、权限和通信错误仍可能导致查询失败。
+- 退出码：`0` 表示成功（交互确认选择取消也返回 `0`）；`1` 表示操作失败或外部代理缺少确认；`2` 表示参数错误。`--json` 只用于 `status`，系统代理命令仅 `sysproxy stop` 接受 `--yes`，用于外部代理确认。
+
+JSON 示例（示例值，不表示当前机器状态）：
+
+```json
+{"state":"Paused","available":true,"enabled":false,"configured":false,"paused":true}
+{"available":true,"enabled":true,"owned":false}
+{"mode":"rule"}
+```
+
+三行依次对应 `tun status --json`、`sysproxy status --json` 和 `mode status --json`，每条命令各输出一个 JSON 对象。
 
 ## 配置档案
 

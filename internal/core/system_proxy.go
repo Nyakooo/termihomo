@@ -44,7 +44,14 @@ func (m Manager) SetSystemProxy(ctx context.Context, enable bool, externalRevisi
 			if err := m.disableSystemProxy(ctx, externalRevision); err != nil {
 				return err
 			}
-			return m.saveNetworkPreference(systemProxyPreference, false)
+			if err := m.saveNetworkPreference(systemProxyPreference, false); err != nil {
+				return err
+			}
+			if state, err := m.runningInstance(); err == nil && state.ResumeSystemProxy {
+				state.ResumeSystemProxy = false
+				return m.writeInstance(state)
+			}
+			return nil
 		}
 		state, err := m.runningInstance()
 		if err != nil {
@@ -63,10 +70,12 @@ func (m Manager) SetSystemProxy(ctx context.Context, enable bool, externalRevisi
 	})
 }
 
-func (m Manager) restoreSystemProxy() {
+func (m Manager) restoreSystemProxy() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	if err := m.disableSystemProxy(ctx, ""); err != nil && !errors.Is(err, os.ErrNotExist) {
 		m.recordLifecycle("Could not restore system proxy")
+		return i18n.Wrap("Could not restore system proxy: %s", err)
 	}
+	return nil
 }

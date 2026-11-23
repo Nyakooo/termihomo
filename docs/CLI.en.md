@@ -46,6 +46,7 @@ termihomo status
 termihomo reload
 termihomo restart
 termihomo stop
+termihomo down
 ```
 
 - `start`: start the Mihomo process managed by Termihomo. Also start the tray if enabled and supported by the current desktop.
@@ -53,6 +54,7 @@ termihomo stop
 - `reload`: reload configuration in the current process. Changes to startup-level options may require a restart.
 - `restart`: stop and start the core again. Existing connections will be interrupted. Also start the tray if enabled and supported; an existing tray is reused.
 - `stop`: stop the managed core process and restore system proxy settings owned by Termihomo. Keep the tray and terminal interface open; the tray refreshes to show the stopped state.
+- `down`: close the tray and terminal interfaces, stop the core, and restore owned system proxy settings. Keep configuration, tray preferences, and startup registration.
 
 Status can be emitted as JSON:
 
@@ -65,9 +67,53 @@ termihomo status --json
 ```sh
 termihomo tun start
 termihomo tun stop
+termihomo tun status
+termihomo tun status --json
 ```
 
 Enabling TUN usually requires network-administration privileges. Confirm that the operating system and environment meet Mihomo's TUN requirements first.
+
+### System proxy
+
+```sh
+termihomo sysproxy start
+termihomo sysproxy stop
+termihomo sysproxy status
+termihomo sysproxy status --json
+```
+
+Enabling the system proxy requires the core to be running. Stopping normally restores settings owned by Termihomo. Disabling an external proxy requires interactive confirmation, or `termihomo sysproxy stop --yes` for scripts. External settings are checked for changes after confirmation. `sysproxy start` refuses to overwrite an external proxy.
+
+### Routing mode
+
+```sh
+termihomo mode rule
+termihomo mode global
+termihomo mode direct
+termihomo mode status
+termihomo mode status --json
+```
+
+Routing mode changes and queries require a working core controller. The tray and terminal interface refresh automatically after network changes. JSON fields are language-independent: TUN returns `state`, `available`, `enabled`, `configured`, and `paused`; system proxy returns `available`, `enabled`, and `owned`; routing mode returns `mode`. TUN and system proxy queries still return JSON when unavailable, with `available` set to `false`.
+
+### Platforms and scripting
+
+- System proxy: Windows uses the current user's proxy settings; macOS uses the active network service; Linux currently supports GNOME desktop settings. This system proxy interface is unavailable on Android.
+- TUN follows the core's network privileges and authorization requirements on Linux, macOS, and Windows. Android requires a VPN application; these commands do not bypass platform permissions.
+- TUN JSON `available` describes current core and privilege availability, not permanent OS capability. `paused` describes a saved TUN resume intention; `tun stop` clears that intention.
+- `down` waits up to 10 seconds for interfaces to close and still attempts to stop the core if interface shutdown fails. Interface shutdown and proxy restoration failures return a nonzero exit code.
+- Routing mode queries require a working controller. Unsupported proxy platforms and stopped cores are represented as unavailable in the corresponding status query. Invalid configuration, permission, and communication errors may still fail queries.
+- Exit codes: `0` for success (including an interactively declined confirmation), `1` for operational failure or missing external-proxy confirmation, and `2` for invalid arguments. Use `--json` only with `status`; among system proxy commands, only `sysproxy stop` accepts `--yes`, to confirm disabling an external proxy.
+
+Example JSON values, not the current machine's state:
+
+```json
+{"state":"Paused","available":true,"enabled":false,"configured":false,"paused":true}
+{"available":true,"enabled":true,"owned":false}
+{"mode":"rule"}
+```
+
+The lines correspond to `tun status --json`, `sysproxy status --json`, and `mode status --json`. Each command emits one JSON object.
 
 ## Profiles
 

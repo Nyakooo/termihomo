@@ -171,8 +171,7 @@ func (m Manager) Stop() error {
 		if err := m.stop(); err != nil {
 			return err
 		}
-		m.restoreSystemProxy()
-		return nil
+		return m.restoreSystemProxy()
 	})
 }
 
