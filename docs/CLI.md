@@ -48,11 +48,11 @@ termihomo restart
 termihomo stop
 ```
 
-- `start`：启动由 Termihomo 管理的 Mihomo 后台进程。
+- `start`：启动由 Termihomo 管理的 Mihomo 后台进程；若已启用系统托盘且当前桌面支持托盘，同时补启托盘。
 - `status`：查看进程与 Controller 状态。
 - `reload`：在当前进程中重新加载配置。端口等启动参数变更可能需要重启。
-- `restart`：停止并重新启动内核，现有连接会中断。
-- `stop`：停止托管的内核进程。
+- `restart`：停止并重新启动内核，现有连接会中断；同样按系统托盘设置补启托盘，已有托盘不会重复启动。
+- `stop`：停止托管的内核进程，恢复 Termihomo 接管的系统代理；保留托盘和终端界面，托盘会刷新为停止状态。
 
 状态支持 JSON 输出：
 

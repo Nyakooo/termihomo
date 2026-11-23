@@ -48,11 +48,11 @@ termihomo restart
 termihomo stop
 ```
 
-- `start`: start the Mihomo process managed by Termihomo.
+- `start`: start the Mihomo process managed by Termihomo. Also start the tray if enabled and supported by the current desktop.
 - `status`: inspect process and Controller state.
 - `reload`: reload configuration in the current process. Changes to startup-level options may require a restart.
-- `restart`: stop and start the core again. Existing connections will be interrupted.
-- `stop`: stop the managed core process.
+- `restart`: stop and start the core again. Existing connections will be interrupted. Also start the tray if enabled and supported; an existing tray is reused.
+- `stop`: stop the managed core process and restore system proxy settings owned by Termihomo. Keep the tray and terminal interface open; the tray refreshes to show the stopped state.
 
 Status can be emitted as JSON:
 

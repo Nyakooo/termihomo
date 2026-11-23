@@ -201,7 +201,8 @@ func runTrayConsole(args []string, stderr io.Writer) int {
 
 func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n.Language) int {
 	var paths platform.Paths
-	if len(args) == 4 && args[0] == "--boot-start" {
+	bootStart := len(args) == 4 && args[0] == "--boot-start"
+	if bootStart {
 		paths = platform.Paths{Config: args[1], Data: args[2], Logs: args[3]}
 		if !filepath.IsAbs(paths.Config) || !filepath.IsAbs(paths.Data) || !filepath.IsAbs(paths.Logs) {
 			fmt.Fprintln(stderr, lang.Text("Startup directories must be absolute paths"))
@@ -324,6 +325,9 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 				fmt.Fprintln(stdout)
 			}
 		}
+	}
+	if err == nil && !bootStart && (args[0] == "start" || args[0] == "restart") && manager.TrayEnabled() && tray.Available() {
+		err = tray.Start(paths)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, lang.Error(err))
