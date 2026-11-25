@@ -92,6 +92,10 @@ func (m Manager) SetTUN(ctx context.Context, enable bool) error {
 }
 
 func (m Manager) setTUN(ctx context.Context, state *instance, enable bool) error {
+	return m.setTUNWithAuthorization(ctx, state, enable, true)
+}
+
+func (m Manager) setTUNWithAuthorization(ctx context.Context, state *instance, enable, authorize bool) error {
 	if enable && state.Paused {
 		return i18n.Message("Start Mihomo to apply changes")
 	}
@@ -115,7 +119,7 @@ func (m Manager) setTUN(ctx context.Context, state *instance, enable bool) error
 		if _, err := net.InterfaceByName(tunDevice); err == nil {
 			return i18n.Message("The termihomo network interface is already in use")
 		}
-		if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) {
+		if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) && authorize {
 			authorized, err := m.authorizeTUN(ctx, *state, current)
 			if authorized.PID != 0 {
 				authorized.ResumeLAN = state.ResumeLAN

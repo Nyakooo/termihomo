@@ -49,8 +49,18 @@ func TestStartOnBootIsIndependentOfAutoRun(t *testing.T) {
 	unit, link := m.bootUnitPaths()
 	body, err := os.ReadFile(link)
 	if err != nil || !strings.Contains(string(body), "RemainAfterExit=yes\n") ||
-		!strings.Contains(string(body), " start\n\n[Install]\nWantedBy=default.target\n") {
+		!strings.Contains(string(body), " --boot-start ") {
 		t.Fatalf("invalid boot service %s: %q, %v", unit, body, err)
+	}
+	// Reading settings upgrades legacy units without enabling linger again.
+	if err := os.WriteFile(unit, []byte("[Service]\nExecStart=old start\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TERMIHOMO_TEST_LINGER", "no")
+	check("true", "true")
+	repaired, err := os.ReadFile(unit)
+	if err != nil || !strings.Contains(string(repaired), " --boot-start ") {
+		t.Fatalf("legacy boot unit not repaired: %s %v", repaired, err)
 	}
 	set("app.auto-run", "false")
 	check("true", "false")

@@ -663,4 +663,6 @@ var zh = map[string]string{
 
 	"Could not restore system proxy: %s":             "无法恢复系统代理：%s",
 	"System proxy is managed by another application": "系统代理由其他程序管理",
+
+	"Network settings are not ready": "网络设置尚未就绪",
 }

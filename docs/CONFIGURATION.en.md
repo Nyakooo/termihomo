@@ -58,7 +58,7 @@ Press Enter on a Boolean setting in **Tools → General** to toggle it.
 
 System proxy, TUN, and LAN proxy switches are saved and reapplied on boot, auto-run, and resume. Stopping or pausing the proxy preserves these preferences. Core restarts and configuration reloads also retain the LAN proxy state.
 
-If desktop system proxy settings are unavailable before login, restoration is retried at desktop login even when the system tray is disabled. TUN still requires network administration privileges, and LAN proxy activation requires a private IPv4 network. Restoration failures are reported without clearing saved switches.
+If desktop system proxy settings are unavailable before login, restoration is retried at desktop login even when the system tray is disabled. Login restoration waits up to two minutes for a busy instance lock, core readiness, or network readiness, without requesting TUN authorization. At boot, individual network restoration failures are logged while the started core remains running. TUN still requires network administration privileges, and LAN proxy activation requires a private IPv4 network. Restoration failures are reported without clearing saved switches.
 
 ### Data directory
 

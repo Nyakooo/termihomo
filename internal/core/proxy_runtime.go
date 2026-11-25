@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Nyakooo/termihomo/internal/i18n"
+	"github.com/Nyakooo/termihomo/internal/platform"
 )
 
 const (
@@ -31,7 +32,7 @@ func (m Manager) saveNetworkPreference(key string, enabled bool) error {
 	return m.writeToolSettings(settings)
 }
 
-func (m Manager) applyNetworkPreferences(state *instance) error {
+func (m Manager) loadNetworkPreferences(state *instance) error {
 	settings, err := m.readToolSettings()
 	if err != nil {
 		return err
@@ -124,7 +125,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 	next.Paused = paused
 	var proxyResumed bool
 	if !paused {
-		if err := m.applyNetworkPreferences(&next); err != nil {
+		if err := m.loadNetworkPreferences(&next); err != nil {
 			return err
 		}
 	}
@@ -133,7 +134,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 		if paused && state.ResumeSystemProxy {
 			err = m.disableSystemProxy(ctx, "")
 		} else if !paused {
-			proxyResumed, err = m.resumePausedNetwork(ctx, &next)
+			proxyResumed, err = m.restoreNetwork(ctx, &next)
 			next.ResumeLAN, next.ResumeTUN, next.ResumeSystemProxy = false, false, false
 		}
 	}
@@ -145,7 +146,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 		defer cancel()
 		rollbackErr := patch(rollback, next, state.Paused)
 		if paused && rollbackErr == nil {
-			_, rollbackErr = m.resumePausedNetwork(rollback, &state)
+			_, rollbackErr = m.restoreNetwork(rollback, &state)
 		} else if proxyResumed {
 			rollbackErr = errors.Join(rollbackErr, m.disableSystemProxy(rollback, ""))
 		}
@@ -159,15 +160,35 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 	return nil
 }
 
-// resumePausedNetwork restores each preference independently so a failed TUN
-// authorization cannot prevent LAN or system proxy restoration.
-func (m Manager) resumePausedNetwork(ctx context.Context, state *instance) (bool, error) {
+// NetworkRestoreError means the core started, but a saved network setting
+// could not be restored. Boot launchers must retain the running core.
+type NetworkRestoreError struct{ Err error }
+
+func (e *NetworkRestoreError) Error() string { return e.Err.Error() }
+func (e *NetworkRestoreError) Unwrap() error { return e.Err }
+
+var errNetworkPending = i18n.Message("Network settings are not ready")
+
+func (m Manager) restoreNetwork(ctx context.Context, state *instance) (bool, error) {
+	return m.restoreNetworkWithAuthorization(ctx, state, true)
+}
+
+// restoreNetworkWithAuthorization attempts all requested settings independently.
+// Boot and login restoration disable interactive TUN authorization.
+func (m Manager) restoreNetworkWithAuthorization(ctx context.Context, state *instance, authorize bool) (bool, error) {
 	var lanErr, tunErr, proxyErr error
 	if state.ResumeLAN {
-		lanErr = state.setLAN(ctx, true)
+		current, err := state.overview(ctx)
+		lanErr = err
+		if err == nil && !current.LAN {
+			lanErr = state.setLAN(ctx, true)
+		}
+		if errors.Is(lanErr, errLANUnavailable) {
+			lanErr = errors.Join(errNetworkPending, lanErr)
+		}
 	}
 	if state.ResumeTUN {
-		tunErr = m.setTUN(ctx, state, true)
+		tunErr = m.setTUNWithAuthorization(ctx, state, true, authorize)
 	}
 	proxyResumed := false
 	if state.ResumeSystemProxy {
@@ -179,31 +200,72 @@ func (m Manager) resumePausedNetwork(ctx context.Context, state *instance) (bool
 		} else {
 			// Pre-login services may not have access to desktop proxy settings.
 			// The desktop login entry retries without requiring the tray to be enabled.
-			m.recordLifecycle("System proxy restoration deferred until desktop login")
+			proxyErr = errors.Join(errNetworkPending, i18n.Message("System proxy settings unavailable"))
 		}
 	}
 	return proxyResumed, errors.Join(lanErr, tunErr, proxyErr)
 }
 
-// RestoreDesktopNetwork retries saved preferences after the desktop session
-// becomes available. It never starts or resumes a stopped/paused proxy.
+// RestoreDesktopNetwork waits briefly for normal boot/login readiness races.
+// Every attempt releases the instance lock before waiting. It never starts a
+// stopped core, resumes a paused core, or requests interactive authorization.
 func (m Manager) RestoreDesktopNetwork(ctx context.Context) error {
-	return m.withLock(func() error {
-		status, err := m.Status(ctx)
-		if err != nil || status.State != "Running" {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return m.restoreDesktopNetwork(ctx, time.Second)
+}
+
+func (m Manager) restoreDesktopNetwork(ctx context.Context, interval time.Duration) error {
+	for {
+		if err := ctx.Err(); err != nil {
 			return err
+		}
+		err := m.restoreDesktopNetworkOnce(ctx)
+		if !errors.Is(err, platform.ErrInstanceBusy) && !errors.Is(err, errNetworkPending) {
+			if err != nil {
+				m.recordLifecycle("Could not restore desktop network preferences: " + err.Error())
+			}
+			return err
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			m.recordLifecycle("Desktop network restoration timed out: " + err.Error())
+			return errors.Join(ctx.Err(), err)
+		case <-timer.C:
+		}
+	}
+}
+
+func (m Manager) restoreDesktopNetworkOnce(ctx context.Context) error {
+	return m.withLock(func() error {
+		preferences := instance{}
+		if err := m.loadNetworkPreferences(&preferences); err != nil {
+			return err
+		}
+		if !preferences.ResumeLAN && !preferences.ResumeTUN && !preferences.ResumeSystemProxy {
+			return nil
+		}
+		status, err := m.Status(ctx)
+		if err != nil {
+			return err
+		}
+		switch status.State {
+		case "NotInstalled", "Paused":
+			return nil
+		case "Running":
+		default:
+			return errNetworkPending
 		}
 		state, err := m.runningInstance()
 		if err != nil {
 			return err
 		}
-		if err := m.applyNetworkPreferences(&state); err != nil {
+		if err := m.loadNetworkPreferences(&state); err != nil {
 			return err
 		}
-		_, err = m.resumePausedNetwork(ctx, &state)
-		if err != nil {
-			m.recordLifecycle("Could not restore desktop network preferences: " + err.Error())
-		}
+		_, err = m.restoreNetworkWithAuthorization(ctx, &state, false)
 		return err
 	})
 }

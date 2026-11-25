@@ -23,7 +23,7 @@ func TestApplyNetworkPreferencesIncludesExplicitDisabledValues(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := m.applyNetworkPreferences(&state); err != nil {
+			if err := m.loadNetworkPreferences(&state); err != nil {
 				t.Fatal(err)
 			}
 			if state.ResumeLAN != lan || state.ResumeTUN != tun || state.ResumeSystemProxy != proxy {

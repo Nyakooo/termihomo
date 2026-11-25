@@ -126,14 +126,19 @@ func (m Manager) runtimeStatus(ctx context.Context) (Status, instance, []Rule, e
 }
 
 func (m Manager) Start(ctx context.Context) error {
-	return m.startManaged(ctx)
+	return m.startManaged(ctx, true)
 }
 
 func (m Manager) StartDashboardProxy(ctx context.Context) error {
-	return m.startManaged(ctx)
+	return m.startManaged(ctx, true)
 }
 
-func (m Manager) startManaged(ctx context.Context) error {
+// StartBoot restores saved settings without opening authorization dialogs.
+func (m Manager) StartBoot(ctx context.Context) error {
+	return m.startManaged(ctx, false)
+}
+
+func (m Manager) startManaged(ctx context.Context, authorize bool) error {
 	if err := m.Install(ctx); err != nil {
 		return err
 	}
@@ -159,11 +164,15 @@ func (m Manager) startManaged(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := m.applyNetworkPreferences(&state); err != nil {
+		if err := m.loadNetworkPreferences(&state); err != nil {
 			return err
 		}
-		_, err = m.resumePausedNetwork(ctx, &state)
-		return err
+		_, err = m.restoreNetworkWithAuthorization(ctx, &state, authorize)
+		if err != nil {
+			m.recordLifecycle("Core started; network restoration incomplete: " + err.Error())
+			return &NetworkRestoreError{Err: err}
+		}
+		return nil
 	})
 }
 
@@ -247,7 +256,7 @@ func (m Manager) Restart(ctx context.Context) error {
 
 		if state.Paused {
 			state.ResumeLAN, state.ResumeTUN, state.ResumeSystemProxy = previous.ResumeLAN, previous.ResumeTUN, previous.ResumeSystemProxy
-			if err := m.applyNetworkPreferences(&state); err != nil {
+			if err := m.loadNetworkPreferences(&state); err != nil {
 				return err
 			}
 			if err := m.writeInstance(state); err != nil {
@@ -255,10 +264,10 @@ func (m Manager) Restart(ctx context.Context) error {
 			}
 		}
 		if stateErr != nil {
-			if err := m.applyNetworkPreferences(&state); err != nil {
+			if err := m.loadNetworkPreferences(&state); err != nil {
 				return err
 			}
-			_, err := m.resumePausedNetwork(ctx, &state)
+			_, err := m.restoreNetwork(ctx, &state)
 			return err
 		}
 		var proxyErr error

@@ -66,10 +66,12 @@ func (m Manager) SetLAN(ctx context.Context, enabled bool) error {
 	})
 }
 
+var errLANUnavailable = i18n.Message("No private IPv4 network is available")
+
 func (state instance) setLAN(ctx context.Context, enabled bool) error {
 	addresses, networks := LocalProxyNetworks()
 	if enabled && len(addresses) == 0 {
-		return i18n.Message("No private IPv4 network is available")
+		return errLANUnavailable
 	}
 	check := func(ctx context.Context, address string) bool {
 		conn, err := (&net.Dialer{Timeout: 300 * time.Millisecond}).DialContext(ctx, "tcp4", address)

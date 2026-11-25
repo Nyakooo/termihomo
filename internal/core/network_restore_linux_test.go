@@ -4,6 +4,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -56,6 +57,7 @@ func fakeDesktopProxy(t *testing.T) {
 	t.Setenv("XDG_CURRENT_DESKTOP", "GNOME")
 	t.Setenv("TEST_PROXY_DIR", dir)
 	script := `#!/bin/sh
+[ -f "$TEST_PROXY_DIR/unavailable" ] && exit 1
 path="$TEST_PROXY_DIR/$2.$3"
 case $1 in
 list-recursively) for f in "$TEST_PROXY_DIR"/org.gnome.system.proxy.*; do name=${f##*/}; printf '%s %s %s\n' "${name%.*}" "${name##*.}" "$(cat "$f")"; done;;
@@ -256,8 +258,8 @@ func TestDesktopRestoresSystemProxyAndUpdatesOwnedPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_CURRENT_DESKTOP", "")
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatalf("pre-login start: %v", err)
+	if err := m.StartBoot(t.Context()); !errors.Is(err, errNetworkPending) {
+		t.Fatalf("pre-login network restoration must be deferred: %v", err)
 	}
 	t.Setenv("XDG_CURRENT_DESKTOP", "GNOME")
 	if err := m.RestoreDesktopNetwork(t.Context()); err != nil {

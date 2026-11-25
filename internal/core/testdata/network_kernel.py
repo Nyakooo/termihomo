@@ -60,7 +60,10 @@ class Controller(http.server.BaseHTTPRequestHandler):
         elif self.path == '/proxies':
             self.respond({'proxies': {}})
         elif self.path == '/configs':
-            self.respond(config)
+            if os.environ.get('TEST_NETWORK_CONFIG_FAILURE') == '1':
+                self.send_error(503)
+            else:
+                self.respond(config)
         else:
             self.send_error(404)
 

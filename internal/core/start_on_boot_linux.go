@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -27,7 +28,12 @@ func (m Manager) startOnBoot() (bool, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return false, err
+	}
+	// Repair older units that called plain `start`, so boot-only error handling
+	// also applies after an upgrade without toggling the startup setting.
+	return true, m.writeBootUnit()
 }
 
 func (m Manager) setStartOnBoot(ctx context.Context, enabled bool) error {
@@ -43,10 +49,6 @@ func (m Manager) setStartOnBoot(ctx context.Context, enabled bool) error {
 		return err
 	}
 
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 		return err
 	}
@@ -55,23 +57,7 @@ func (m Manager) setStartOnBoot(ctx context.Context, enabled bool) error {
 	if err != nil {
 		return i18n.Errorf("Could not enable startup before login: %s", strings.TrimSpace(string(output)+" "+err.Error()))
 	}
-	// A oneshot remains active after the CLI exits so systemd keeps its Mihomo child.
-	service := fmt.Sprintf(`[Unit]
-Description=Termihomo proxy
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-Environment=%s %s %s
-ExecStart=%s start
-
-[Install]
-WantedBy=default.target
-`, unitArgument("XDG_CONFIG_HOME="+filepath.Dir(m.Paths.Config)),
-		unitArgument("XDG_DATA_HOME="+filepath.Dir(m.Paths.Data)),
-		unitArgument("XDG_STATE_HOME="+filepath.Dir(filepath.Dir(m.Paths.Logs))),
-		unitArgument(":"+executable))
-	if err := atomicWrite(unit, []byte(service)); err != nil {
+	if err := m.writeBootUnit(); err != nil {
 		return err
 	}
 	if err := os.Symlink(filepath.Join("..", bootUnitName), link); errors.Is(err, os.ErrExist) {
@@ -101,4 +87,32 @@ func (m Manager) removeBootRegistration(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (m Manager) writeBootUnit() error {
+	unit, _ := m.bootUnitPaths()
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	// A oneshot remains active after the CLI exits so systemd keeps its Mihomo child.
+	service := fmt.Sprintf(`[Unit]
+Description=Termihomo proxy
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=%s %s %s
+ExecStart=%s --boot-start %s %s %s
+
+[Install]
+WantedBy=default.target
+`, unitArgument("XDG_CONFIG_HOME="+filepath.Dir(m.Paths.Config)),
+		unitArgument("XDG_DATA_HOME="+filepath.Dir(m.Paths.Data)),
+		unitArgument("XDG_STATE_HOME="+filepath.Dir(filepath.Dir(m.Paths.Logs))),
+		unitArgument(":"+executable), unitArgument(m.Paths.Config), unitArgument(m.Paths.Data), unitArgument(m.Paths.Logs))
+	if old, err := os.ReadFile(unit); err == nil && bytes.Equal(old, []byte(service)) {
+		return nil
+	}
+	return atomicWrite(unit, []byte(service))
 }

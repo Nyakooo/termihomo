@@ -274,7 +274,11 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 			fmt.Fprintf(stdout, lang.Text("Mihomo %s installed\n"), core.Version)
 		}
 	case "start":
-		err = manager.Start(ctx)
+		if bootStart {
+			err = manager.StartBoot(ctx)
+		} else {
+			err = manager.Start(ctx)
+		}
 	case "down":
 		err = runDown(ctx, manager)
 	case "stop":
@@ -338,6 +342,13 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 				fmt.Fprintln(stdout)
 			}
 		}
+	}
+	// A ready core must survive partial network restoration at boot. The
+	// desktop login entry retries settings that need the user's session.
+	var restoreErr *core.NetworkRestoreError
+	if bootStart && errors.As(err, &restoreErr) {
+		fmt.Fprintln(stderr, lang.Error(err))
+		return 0
 	}
 	if err == nil && !bootStart && (args[0] == "start" || args[0] == "restart") && manager.TrayEnabled() && tray.Available() {
 		err = tray.Start(paths)
