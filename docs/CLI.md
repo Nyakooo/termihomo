@@ -30,9 +30,11 @@ termihomo --lang zh-CN
 | `termihomo` | 在交互式终端中启动 TUI |
 | `termihomo init` | 初始化应用配置、数据和日志目录 |
 | `termihomo install` | 下载并校验受支持的 Mihomo 内核 |
-| `termihomo update` | 更新 Termihomo 可执行程序 |
+| `termihomo update` | 更新 Termihomo 可执行程序，显示检查、下载、校验和安装进度 |
 | `termihomo uninstall` | 卸载程序及运行数据，保留配置 |
 | `termihomo version` | 显示版本和当前平台 |
+
+耗时命令（安装、启动/重启、重载、配置检查、订阅导入/更新、测速、停止和卸载）会向 stderr 输出阶段或开始提示，成功后显示完成结果。`update` 在交互式终端中显示下载进度条；重定向时只输出阶段提示。查询命令和 JSON 输出保持简洁。
 
 ### 卸载
 

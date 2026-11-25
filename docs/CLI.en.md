@@ -30,9 +30,11 @@ termihomo --lang zh-CN
 | `termihomo` | Launch the interactive TUI |
 | `termihomo init` | Initialize application config, data, and log directories |
 | `termihomo install` | Download and verify a supported Mihomo core |
-| `termihomo update` | Update the Termihomo executable |
+| `termihomo update` | Update the Termihomo executable with check, download, verification, and installation progress |
 | `termihomo uninstall` | Remove the executable and runtime files while keeping user configuration |
 | `termihomo version` | Print the version and current platform |
+
+Slow commands (installation, startup/restart, reload, config checks, profile imports/updates, latency tests, shutdown, and uninstall) print stage or start messages to stderr and report completion on success. `update` shows a download progress bar in interactive terminals and stage messages when redirected. Query commands and JSON output remain unchanged.
 
 ### Uninstall
 

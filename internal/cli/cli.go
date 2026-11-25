@@ -150,6 +150,7 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stdout, "termihomo %s (%s/%s)\n", version.Value, runtime.GOOS, runtime.GOARCH)
 		return 0
 	case len(args) == 1 && args[0] == "uninstall":
+		fmt.Fprintln(stderr, lang.Text("Uninstalling Termihomo")+"…")
 		scheduled, err := uninstall()
 		if err != nil {
 			fmt.Fprintln(stderr, lang.Error(err))
@@ -164,7 +165,9 @@ func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	case len(args) == 1 && args[0] == "update":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		tag, changed, err := update.Run(ctx, version.Value)
+		progress, finishProgress := updateProgress(stderr, lang, isTerminal(stderr) || isMSYSTerminal(stderr))
+		tag, changed, err := update.Run(ctx, version.Value, progress)
+		finishProgress()
 		if errors.Is(err, update.ErrUpdateScheduled) {
 			fmt.Fprintf(stdout, lang.Text("Termihomo %s will be installed after this process exits.")+"\n", tag)
 			return 0
@@ -267,6 +270,10 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	finishProgress := func() {}
+	if !bootStart {
+		ctx, finishProgress = commandProgress(ctx, args, stderr, lang)
+	}
 	switch args[0] {
 	case "install":
 		err = manager.Install(ctx)
@@ -357,6 +364,7 @@ func runCore(args []string, stdin io.Reader, stdout, stderr io.Writer, lang i18n
 		fmt.Fprintln(stderr, lang.Error(err))
 		return 1
 	}
+	finishProgress()
 	return 0
 }
 

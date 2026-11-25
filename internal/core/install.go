@@ -76,12 +76,14 @@ func (m Manager) Install(ctx context.Context) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	reportProfileProgress(ctx, "Downloading Mihomo")
 	archive, size, err := downloadKernelArchive(ctx, &http.Client{Timeout: 2 * time.Minute}, sources, dir, digest)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(archive.Name())
 	defer archive.Close()
+	reportProfileProgress(ctx, "Extracting Mihomo")
 	payload, err := kernelPayload(archive, size, filepath.Ext(asset) == ".zip")
 	if err != nil {
 		return err

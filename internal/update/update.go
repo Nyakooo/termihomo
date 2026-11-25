@@ -39,7 +39,13 @@ type release struct {
 	} `json:"assets"`
 }
 
-func Run(ctx context.Context, current string) (string, bool, error) {
+// Progress describes the current update stage and downloaded asset bytes.
+type Progress struct {
+	Stage             string
+	Downloaded, Total int64
+}
+
+func Run(ctx context.Context, current string, progress func(Progress)) (string, bool, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return "", false, err
@@ -53,7 +59,7 @@ func Run(ctx context.Context, current string) (string, bool, error) {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 	return fetch(ctx, &http.Client{Timeout: 2 * time.Minute}, githubAPI, token,
-		current, executable, runtime.GOOS, runtime.GOARCH)
+		current, executable, runtime.GOOS, runtime.GOARCH, progress)
 }
 
 func releaseAsset(goos, goarch string) (asset, member string, err error) {
@@ -111,7 +117,13 @@ func wantsUpdate(current, latest string) (bool, error) {
 	return false, nil
 }
 
-func fetch(ctx context.Context, client *http.Client, api, token, current, executable, goos, goarch string) (string, bool, error) {
+func fetch(ctx context.Context, client *http.Client, api, token, current, executable, goos, goarch string, progress func(Progress)) (string, bool, error) {
+	report := func(stage string, downloaded, total int64) {
+		if progress != nil {
+			progress(Progress{Stage: stage, Downloaded: downloaded, Total: total})
+		}
+	}
+	report("Checking for updates", 0, 0)
 	asset, member, err := releaseAsset(goos, goarch)
 	if err != nil {
 		return "", false, err
@@ -126,7 +138,7 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 	if err != nil {
 		return "", false, err
 	}
-	get := func(endpoint, accept string) (io.ReadCloser, error) {
+	get := func(endpoint, accept string) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err
@@ -147,7 +159,7 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 			}
 			return nil, i18n.Errorf("Termihomo release request returned HTTP %d", resp.StatusCode)
 		}
-		return resp.Body, nil
+		return resp, nil
 	}
 
 	body, err := get(api+"/releases/latest", "application/vnd.github+json")
@@ -155,8 +167,8 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 		return "", false, err
 	}
 	var latest release
-	err = json.NewDecoder(io.LimitReader(body, 2<<20)).Decode(&latest)
-	body.Close()
+	err = json.NewDecoder(io.LimitReader(body.Body, 2<<20)).Decode(&latest)
+	body.Body.Close()
 	if err != nil {
 		return "", false, err
 	}
@@ -175,19 +187,20 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 	if assets[asset] <= 0 || assets["SHA256SUMS"] <= 0 {
 		return "", false, i18n.Message("The Termihomo release is missing the platform asset or SHA256SUMS")
 	}
-	download := func(name string) (io.ReadCloser, error) {
+	download := func(name string) (*http.Response, error) {
 		if token == "" && api == githubAPI {
 			return get("https://github.com/"+repository+"/releases/download/"+latest.Tag+"/"+name, "application/octet-stream")
 		}
 		return get(fmt.Sprintf("%s/releases/assets/%d", api, assets[name]), "application/octet-stream")
 	}
+	report("Downloading checksums", 0, 0)
 	sums, err := download("SHA256SUMS")
 	if err != nil {
 		return "", false, err
 	}
 	const maxManifest = 64 << 10
-	manifest, err := io.ReadAll(io.LimitReader(sums, maxManifest+1))
-	sums.Close()
+	manifest, err := io.ReadAll(io.LimitReader(sums.Body, maxManifest+1))
+	sums.Body.Close()
 	if err != nil {
 		return "", false, err
 	}
@@ -199,11 +212,12 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 		return "", false, err
 	}
 
+	report("Downloading update", 0, 0)
 	payload, err := download(asset)
 	if err != nil {
 		return "", false, err
 	}
-	defer payload.Close()
+	defer payload.Body.Close()
 	file, err := os.CreateTemp(filepath.Dir(executable), ".termihomo-download-*")
 	if err != nil {
 		return "", false, err
@@ -211,16 +225,23 @@ func fetch(ctx context.Context, client *http.Client, api, token, current, execut
 	defer os.Remove(file.Name())
 	defer file.Close()
 	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(payload, maxBinary+1))
+	var downloaded int64
+	reader := io.TeeReader(payload.Body, progressWriter(func(n int) {
+		downloaded += int64(n)
+		report("Downloading update", downloaded, payload.ContentLength)
+	}))
+	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(reader, maxBinary+1))
 	if err != nil {
 		return "", false, err
 	}
+	report("Verifying download", n, payload.ContentLength)
 	if n == 0 || n > maxBinary || hex.EncodeToString(hash.Sum(nil)) != expected {
 		return "", false, i18n.Message("Termihomo SHA-256 verification failed")
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", false, err
 	}
+	report("Installing update", n, payload.ContentLength)
 	lock, err := platform.LockExecutableUpdate(executable)
 	if err != nil {
 		return "", false, err
@@ -311,4 +332,11 @@ func install(executable string, payload io.Reader, member string, original os.Fi
 	err = replaceExecutable(file.Name(), executable)
 	scheduled = errors.Is(err, ErrUpdateScheduled)
 	return err
+}
+
+type progressWriter func(int)
+
+func (report progressWriter) Write(p []byte) (int, error) {
+	report(len(p))
+	return len(p), nil
 }

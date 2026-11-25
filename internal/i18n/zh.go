@@ -665,4 +665,23 @@ var zh = map[string]string{
 	"System proxy is managed by another application": "系统代理由其他程序管理",
 
 	"Network settings are not ready": "网络设置尚未就绪",
+
+	"Checking for updates":  "正在检查更新",
+	"Downloading checksums": "正在下载校验信息",
+	"Downloading update":    "正在下载更新",
+	"Verifying download":    "正在校验下载文件",
+	"Installing update":     "正在安装更新",
+
+	"Downloading Mihomo":      "正在下载 Mihomo",
+	"Extracting Mihomo":       "正在解压 Mihomo",
+	"Restarting Mihomo":       "正在重启 Mihomo",
+	"Reloading configuration": "正在重载配置",
+	"Stopping Mihomo":         "正在停止 Mihomo",
+	"Stopping Termihomo":      "正在停止 Termihomo",
+	"Checking configuration":  "正在检查配置",
+	"Loading profile":         "正在加载配置",
+	"Updating profile":        "正在更新配置",
+	"Testing proxy":           "正在测速",
+	"Uninstalling Termihomo":  "正在卸载 Termihomo",
+	"Done":                    "完成",
 }

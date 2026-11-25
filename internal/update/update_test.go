@@ -10,15 +10,17 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
 func TestFetchVerifiedRelease(t *testing.T) {
 	for _, tc := range []struct {
-		name, current, member, expected string
-		corrupt, changed, fails         bool
+		name, current, member, expected  string
+		corrupt, changed, fails, unknown bool
 	}{
 		{name: "install newer", current: "v0.1.9", member: "termihomo", expected: "new", changed: true},
+		{name: "install without content length", current: "v0.1.9", member: "termihomo", expected: "new", changed: true, unknown: true},
 		{name: "no downgrade", current: "v0.11.0", member: "termihomo", expected: "old"},
 		{name: "reject corrupt download", current: "v0.1.9", member: "termihomo", expected: "old", corrupt: true, fails: true},
 		{name: "reject unexpected archive path", current: "v0.1.9", member: "../termihomo", expected: "old", fails: true},
@@ -58,6 +60,12 @@ func TestFetchVerifiedRelease(t *testing.T) {
 					http.Error(w, "incorrect accept header", http.StatusBadRequest)
 					return
 				}
+				if tc.unknown {
+					w.WriteHeader(http.StatusOK)
+					w.(http.Flusher).Flush()
+				} else {
+					w.Header().Set("Content-Length", strconv.Itoa(archive.Len()))
+				}
 				_, _ = w.Write(archive.Bytes())
 			})
 			mux.HandleFunc("/releases/assets/2", func(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +78,41 @@ func TestFetchVerifiedRelease(t *testing.T) {
 			if err := os.WriteFile(path, []byte("old"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			tag, changed, err := fetch(t.Context(), server.Client(), server.URL, "test-token", tc.current, path, "linux", "amd64")
+			var events []Progress
+			tag, changed, err := fetch(t.Context(), server.Client(), server.URL, "test-token", tc.current, path, "linux", "amd64", func(p Progress) { events = append(events, p) })
+			if len(events) == 0 || events[0].Stage != "Checking for updates" {
+				t.Fatal("update started without feedback")
+			}
+			var downloaded int64
+			installing := false
+			for _, event := range events {
+				if event.Stage == "Downloading update" && event.Downloaded > 0 {
+					expectedTotal := int64(archive.Len())
+					if tc.unknown {
+						expectedTotal = -1
+					}
+					if event.Downloaded < downloaded || event.Total != expectedTotal {
+						t.Fatalf("invalid byte progress: %+v", event)
+					}
+					downloaded = event.Downloaded
+				}
+				if event.Stage == "Installing update" {
+					installing = true
+				}
+			}
+			if tc.name == "no downgrade" {
+				if len(events) != 1 {
+					t.Fatalf("up-to-date version reported download progress: %+v", events)
+				}
+			} else if downloaded != int64(archive.Len()) {
+				t.Fatalf("missing final download byte count: %d", downloaded)
+			}
+			if tc.corrupt && installing {
+				t.Fatal("corrupt download reported installation")
+			}
+			if tc.changed && !installing {
+				t.Fatal("installation stage missing")
+			}
 			if (err != nil) != tc.fails || changed != tc.changed {
 				t.Fatalf("fetch returned tag=%q changed=%v err=%v", tag, changed, err)
 			}
@@ -123,7 +165,7 @@ func TestFetchRejectsReplacementDuringDownload(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	_, changed, err := fetch(t.Context(), server.Client(), server.URL, "", "v0.1.0", executable, "windows", "amd64")
+	_, changed, err := fetch(t.Context(), server.Client(), server.URL, "", "v0.1.0", executable, "windows", "amd64", nil)
 	select {
 	case err := <-replaceErr:
 		if err != nil {
