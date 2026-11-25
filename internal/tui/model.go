@@ -414,7 +414,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		autoRun := msg.toolSettings["app.auto-run"] == "true"
 		if m.ctx != nil && !m.exitPending && !m.proxyControllerAttempted && !m.busy &&
 			((msg.profile.Source != "" || autoRun) && (msg.status.State == "Stopped" || msg.status.State == "Failed") ||
-				autoRun && msg.status.State == "Paused") {
+				autoRun && (msg.status.State == "Paused" || msg.status.State == "Running")) {
 			m.proxyControllerAttempted = true
 			return m, m.profileAction(m.lang.Text("Load proxies"), func(ctx context.Context) error {
 				if autoRun {

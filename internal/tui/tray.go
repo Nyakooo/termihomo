@@ -71,7 +71,8 @@ func TrayDesktopState(paths platform.Paths) tray.DesktopState {
 		return manager.Overview(ctx)
 	}
 	return tray.DesktopState{
-		Enabled: manager.TrayEnabled,
+		RestoreNetwork: manager.RestoreDesktopNetwork,
+		Enabled:        manager.TrayEnabled,
 		Read: func(ctx context.Context, test bool, refresh func()) tray.Summary {
 			readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			var runtime core.RuntimeSnapshot

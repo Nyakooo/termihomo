@@ -118,6 +118,7 @@ func (m Manager) setTUN(ctx context.Context, state *instance, enable bool) error
 		if err := state.checkTUNPermission(); errors.Is(err, errTUNCapability) {
 			authorized, err := m.authorizeTUN(ctx, *state, current)
 			if authorized.PID != 0 {
+				authorized.ResumeLAN = state.ResumeLAN
 				authorized.ResumeTUN = state.ResumeTUN
 				authorized.ResumeSystemProxy = state.ResumeSystemProxy
 				*state = authorized

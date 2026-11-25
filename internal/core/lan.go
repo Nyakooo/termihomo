@@ -47,7 +47,22 @@ func (m Manager) SetLAN(ctx context.Context, enabled bool) error {
 		if err != nil {
 			return err
 		}
-		return state.setLAN(ctx, enabled)
+		if state.Paused && enabled {
+			return i18n.Message("Start Mihomo to apply changes")
+		}
+		if !state.Paused {
+			if err := state.setLAN(ctx, enabled); err != nil {
+				return err
+			}
+		}
+		if err := m.saveNetworkPreference(lanPreference, enabled); err != nil {
+			return err
+		}
+		if state.Paused {
+			state.ResumeLAN = enabled
+			return m.writeInstance(state)
+		}
+		return nil
 	})
 }
 

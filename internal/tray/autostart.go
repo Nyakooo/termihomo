@@ -26,6 +26,9 @@ func HandleAutostart(args []string, state func(platform.Paths) DesktopState) boo
 	desktop := state(paths)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if desktop.RestoreNetwork != nil {
+		_ = desktop.RestoreNetwork(ctx)
+	}
 	if waitForDesktop(ctx, desktop.Enabled, Available, time.Second) {
 		if err := paths.Ensure(); err == nil {
 			_ = Start(paths)

@@ -39,6 +39,7 @@ type instance struct {
 	Started           time.Time
 	Stopping          bool
 	Paused            bool
+	ResumeLAN         bool `json:",omitempty"`
 	ResumeTUN         bool `json:",omitempty"`
 	ResumeSystemProxy bool `json:",omitempty"`
 }
@@ -125,14 +126,14 @@ func (m Manager) runtimeStatus(ctx context.Context) (Status, instance, []Rule, e
 }
 
 func (m Manager) Start(ctx context.Context) error {
-	return m.startManaged(ctx, false)
+	return m.startManaged(ctx)
 }
 
 func (m Manager) StartDashboardProxy(ctx context.Context) error {
-	return m.startManaged(ctx, true)
+	return m.startManaged(ctx)
 }
 
-func (m Manager) startManaged(ctx context.Context, dashboard bool) error {
+func (m Manager) startManaged(ctx context.Context) error {
 	if err := m.Install(ctx); err != nil {
 		return err
 	}
@@ -151,7 +152,7 @@ func (m Manager) startManaged(ctx context.Context, dashboard bool) error {
 				}
 			}
 		}
-		if err := m.start(ctx); err != nil || !dashboard || resuming {
+		if err := m.start(ctx); err != nil || resuming {
 			return err
 		}
 		state, err := m.runningInstance()
@@ -244,6 +245,22 @@ func (m Manager) Restart(ctx context.Context) error {
 			return err
 		}
 
+		if state.Paused {
+			state.ResumeLAN, state.ResumeTUN, state.ResumeSystemProxy = previous.ResumeLAN, previous.ResumeTUN, previous.ResumeSystemProxy
+			if err := m.applyNetworkPreferences(&state); err != nil {
+				return err
+			}
+			if err := m.writeInstance(state); err != nil {
+				return err
+			}
+		}
+		if stateErr != nil {
+			if err := m.applyNetworkPreferences(&state); err != nil {
+				return err
+			}
+			_, err := m.resumePausedNetwork(ctx, &state)
+			return err
+		}
 		var proxyErr error
 		if proxyOwned && state.Proxy != previous.Proxy && m.SystemProxy(ctx).Owned {
 			proxyErr = m.enableSystemProxy(ctx, state.Proxy, true)

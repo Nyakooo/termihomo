@@ -33,6 +33,7 @@ type Summary struct {
 
 type ReadSummary func(ctx context.Context, test bool, refresh func()) Summary
 type DesktopState struct {
+	RestoreNetwork    func(context.Context) error
 	Enabled           func() bool
 	Read              ReadSummary
 	Pause             func(context.Context) error

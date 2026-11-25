@@ -328,6 +328,11 @@ func (m Manager) applyLiveConfig(ctx context.Context, state instance, body []byt
 			return i18n.Message("TUN did not change state; check Mihomo logs and network privileges")
 		}
 	}
+	if live.LAN {
+		if err := state.setLAN(ctx, true); err != nil {
+			return err
+		}
+	}
 	return state.restoreAvailableSelectors(ctx, live.Choices)
 }
 

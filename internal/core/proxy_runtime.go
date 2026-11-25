@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	lanPreference         = "app.lan-enabled"
 	tunPreference         = "app.tun-enabled"
 	systemProxyPreference = "app.system-proxy-enabled"
 )
@@ -34,6 +35,9 @@ func (m Manager) applyNetworkPreferences(state *instance) error {
 	settings, err := m.readToolSettings()
 	if err != nil {
 		return err
+	}
+	if enabled, ok := settings[lanPreference].(bool); ok {
+		state.ResumeLAN = enabled
 	}
 	if enabled, ok := settings[tunPreference].(bool); ok {
 		state.ResumeTUN = enabled
@@ -65,6 +69,7 @@ func (m Manager) PauseProxy(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			state.ResumeLAN = overview.LAN
 			state.ResumeTUN = overview.TUNConfigured
 			owner, _ := m.proxyOwnership()
 			state.ResumeSystemProxy = len(owner.Applied) > 0 && m.SystemProxy(ctx).Owned
@@ -129,7 +134,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 			err = m.disableSystemProxy(ctx, "")
 		} else if !paused {
 			proxyResumed, err = m.resumePausedNetwork(ctx, &next)
-			next.ResumeTUN, next.ResumeSystemProxy = false, false
+			next.ResumeLAN, next.ResumeTUN, next.ResumeSystemProxy = false, false, false
 		}
 	}
 	if err == nil {
@@ -146,7 +151,7 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 		}
 		if rollbackErr == nil && next.PID != state.PID {
 			next.Paused = state.Paused
-			next.ResumeTUN, next.ResumeSystemProxy = state.ResumeTUN, state.ResumeSystemProxy
+			next.ResumeLAN, next.ResumeTUN, next.ResumeSystemProxy = state.ResumeLAN, state.ResumeTUN, state.ResumeSystemProxy
 			rollbackErr = m.writeInstance(next)
 		}
 		return errors.Join(err, rollbackErr)
@@ -154,14 +159,51 @@ func (m Manager) setProxyPaused(ctx context.Context, state instance, paused bool
 	return nil
 }
 
+// resumePausedNetwork restores each preference independently so a failed TUN
+// authorization cannot prevent LAN or system proxy restoration.
 func (m Manager) resumePausedNetwork(ctx context.Context, state *instance) (bool, error) {
+	var lanErr, tunErr, proxyErr error
+	if state.ResumeLAN {
+		lanErr = state.setLAN(ctx, true)
+	}
 	if state.ResumeTUN {
-		if err := m.setTUN(ctx, state, true); err != nil {
-			return false, err
+		tunErr = m.setTUN(ctx, state, true)
+	}
+	proxyResumed := false
+	if state.ResumeSystemProxy {
+		current := m.SystemProxy(ctx)
+		if current.Available {
+			// Reapply even an enabled owned proxy: its port may have changed.
+			proxyResumed = !current.Enabled
+			proxyErr = m.enableSystemProxy(ctx, state.Proxy, false)
+		} else {
+			// Pre-login services may not have access to desktop proxy settings.
+			// The desktop login entry retries without requiring the tray to be enabled.
+			m.recordLifecycle("System proxy restoration deferred until desktop login")
 		}
 	}
-	if state.ResumeSystemProxy && !m.SystemProxy(ctx).Enabled {
-		return true, m.enableSystemProxy(ctx, state.Proxy, false)
-	}
-	return false, nil
+	return proxyResumed, errors.Join(lanErr, tunErr, proxyErr)
+}
+
+// RestoreDesktopNetwork retries saved preferences after the desktop session
+// becomes available. It never starts or resumes a stopped/paused proxy.
+func (m Manager) RestoreDesktopNetwork(ctx context.Context) error {
+	return m.withLock(func() error {
+		status, err := m.Status(ctx)
+		if err != nil || status.State != "Running" {
+			return err
+		}
+		state, err := m.runningInstance()
+		if err != nil {
+			return err
+		}
+		if err := m.applyNetworkPreferences(&state); err != nil {
+			return err
+		}
+		_, err = m.resumePausedNetwork(ctx, &state)
+		if err != nil {
+			m.recordLifecycle("Could not restore desktop network preferences: " + err.Error())
+		}
+		return err
+	})
 }

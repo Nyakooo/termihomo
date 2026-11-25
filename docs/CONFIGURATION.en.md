@@ -56,6 +56,10 @@ Press Enter on a Boolean setting in **Tools → General** to toggle it.
 | Close connections on node change | Close all active Mihomo connections after a manual node change. Off by default |
 | System tray | Keep a tray item running when a tray host is available. Off by default |
 
+System proxy, TUN, and LAN proxy switches are saved and reapplied on boot, auto-run, and resume. Stopping or pausing the proxy preserves these preferences. Core restarts and configuration reloads also retain the LAN proxy state.
+
+If desktop system proxy settings are unavailable before login, restoration is retried at desktop login even when the system tray is disabled. TUN still requires network administration privileges, and LAN proxy activation requires a private IPv4 network. Restoration failures are reported without clearing saved switches.
+
 ### Data directory
 
 | Path | Purpose |
