@@ -233,9 +233,9 @@ func TestOverviewShowsLifecycleControlsForCurrentState(t *testing.T) {
 
 func TestVimNavigationAndLogLevel(t *testing.T) {
 	m := richModel()
-	m.handleKey("tab", "")
+	m.handleKey("2", "")
 	if m.page != proxies {
-		t.Fatal("Tab should move to proxies")
+		t.Fatal("2 should move to proxies")
 	}
 	for i := range 12 {
 		name := fmt.Sprintf("Node %d", i)
@@ -383,16 +383,35 @@ func TestProxyTestShortcutTestsHighlightedNodeWithoutOpeningDetails(t *testing.T
 	}
 }
 
-func TestTabSkipsStandaloneGroupPage(t *testing.T) {
+func TestTabCyclesWithinCurrentMenu(t *testing.T) {
 	m := richModel()
+	for _, section := range menuSections {
+		if section.pages[0] == proxies {
+			continue
+		}
+		m.changePage(section.pages[0])
+		for i := 1; i <= len(section.pages); i++ {
+			m.handleKey("tab", "")
+			want := section.pages[i%len(section.pages)]
+			if m.page != want {
+				t.Fatalf("%s Tab got %d want %d", section.label, m.page, want)
+			}
+		}
+		m.handleKey("shift+tab", "")
+		if m.page != section.pages[len(section.pages)-1] {
+			t.Fatalf("%s Shift+Tab did not wrap", section.label)
+		}
+	}
 	m.changePage(proxies)
+	tabs := m.proxyTabs()
+	first := m.proxyTabIndex(tabs)
 	m.handleKey("tab", "")
-	if m.page != profiles {
-		t.Fatal("Tab from proxies should open profiles")
+	if m.page != proxies || m.proxyTabIndex(tabs) != (first+1)%len(tabs) {
+		t.Fatal("Tab did not cycle proxy group tabs")
 	}
 	m.handleKey("shift+tab", "")
-	if m.page != proxies {
-		t.Fatal("Shift+Tab from profiles should open proxies")
+	if m.page != proxies || m.proxyTabIndex(tabs) != first {
+		t.Fatal("Shift+Tab did not return to the original group")
 	}
 }
 
@@ -414,8 +433,8 @@ func TestMainMenuNumbersFollowSidebarOrder(t *testing.T) {
 		t.Fatal("clicking the tools content tab should open network")
 	}
 	m.handleKey("shift+tab", "")
-	if m.page != connectionsPage {
-		t.Fatal("Shift+Tab should go to the preceding main menu")
+	if m.page != languagePage {
+		t.Fatal("Shift+Tab should go to the preceding tools tab")
 	}
 }
 

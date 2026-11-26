@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -105,6 +106,7 @@ func (m Manager) updateSavedProfile(ctx context.Context, item profile, active bo
 // Validate outside the instance lock and commit only if the source profile and
 // tool settings still match the snapshots used for validation.
 func (m Manager) updateProfileCandidate(ctx context.Context, item, next profile, active bool) error {
+	next.CustomRules = slices.Clone(item.CustomRules)
 	if err := m.Paths.Ensure(); err != nil {
 		return err
 	}
@@ -143,7 +145,7 @@ func (m Manager) validateProfileCandidate(ctx context.Context, next profile) (ma
 	if err != nil {
 		return nil, err
 	}
-	candidate, err := renderConfigWithSettings(next.YAML, validationInstance(), settings)
+	candidate, err := renderProfileWithSettings(next, validationInstance(), settings)
 	if err != nil {
 		return nil, err
 	}

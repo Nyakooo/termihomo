@@ -28,7 +28,7 @@ type menuSection struct {
 var menuSections = []menuSection{
 	{"Dashboard", []page{dashboard}},
 	{"Proxy menu", []page{proxies}},
-	{"Profile", []page{profiles}},
+	{"Profile", []page{profiles, routingPage}},
 	{"Requests", []page{connectionsPage}},
 	{"Tools", []page{generalPage, languagePage, networkPage, corePage, dnsPage, logs}},
 }
@@ -331,7 +331,7 @@ func (m *model) statusbar(actions string) string {
 		left += fmt.Sprintf(" · %ds · Esc %s", int(time.Since(m.profileStarted).Seconds()), m.lang.Text("Cancel"))
 	}
 	if left == "" {
-		left = m.style.dim("Tab " + m.lang.Text("Switch page"))
+		left = m.style.dim("1–5 " + m.lang.Text("Switch menu") + " · Tab " + m.lang.Text("Switch tab"))
 		if m.page == proxies {
 			left += m.style.dim("  ·  hjkl / ↑↓←→  ·  [ ]")
 		} else if m.page == connectionsPage || m.page == logs {
@@ -434,6 +434,7 @@ func (m *model) actionBar() string {
 		if m.snapshot.overview.Mode != "direct" {
 			actions = []control{{"e", "Detail"}}
 		}
+
 	case profiles:
 		actions = []control{{"enter", "Switch profile"}}
 	case logs:
@@ -460,7 +461,7 @@ func (m *model) actionBar() string {
 		actions = append(actions, control{"esc", "Back"})
 	}
 	quitLabel := "Quit"
-	if m.modalOpen() || (m.page == networkPage && m.showProxyExclusions) {
+	if m.modalOpen() || (m.page == networkPage && m.showProxyExclusions) || (m.page == routingPage && m.routingStage != 0) {
 		quitLabel = "Back"
 	}
 	global := []control{{k("refresh"), "Refresh"}, {k("help"), "Help"}, {k("quit"), quitLabel}}
@@ -493,6 +494,8 @@ func (m *model) body(height int) []string {
 		return m.dashboardPage(height)
 	case proxies:
 		return clampLines(m.proxyGrid(height), height)
+	case routingPage:
+		return m.routingPageView(height)
 	case profiles:
 		return m.profilesPage(height)
 	case logs:
@@ -605,7 +608,10 @@ func (m *model) overlayModal(body []string, height int) []string {
 			lines = append(lines, m.style.accent(label)+input)
 			buttons = []control{{"esc", "Cancel"}, {"enter", "Submit"}}
 		} else {
-			if m.form == "DNS query" {
+			if m.form == "Rule value" {
+				hint := map[string]string{"DOMAIN": "Example: mail.example.com (no port)", "DOMAIN-SUFFIX": "Example: example.com (includes subdomains)", "IP-CIDR": "Example: 192.0.2.0/24 (IPv4)", "DST-PORT": "Destination port: 1–65535"}[m.routingEdit.Type]
+				lines = append(lines, wrapText(m.lang.Text(hint), w-4)...)
+			} else if m.form == "DNS query" {
 				lines = append(lines, m.style.dim(m.lang.Text("Enter a domain and optional record type")))
 			} else if m.formPage == generalPage && m.form != "Filter" {
 				if m.formField.Key == "mixed-port" {
@@ -766,7 +772,8 @@ func (m *model) helpLines() []string {
 	k := m.settings.key
 	row := func(keys, desc string) string { return s.accent(fit(keys, 14)) + s.dim(desc) }
 	lines := []string{
-		row("Tab / 1–5", m.lang.Text("Switch page")),
+		row("1–5", m.lang.Text("Switch menu")),
+		row("Tab / Shift+Tab", m.lang.Text("Switch tab")),
 		row("[ / ]", m.lang.Text("Switch group or content tab")),
 		row("↑↓←→ / hjkl", m.lang.Text("Move selection")),
 		row("gg / End", m.lang.Text("First / last row")),

@@ -55,7 +55,7 @@ func (m *model) cancelForExit() bool {
 func (m *model) handleKey(key, value string) tea.Cmd {
 	quit := m.settings.key("quit")
 	exclusions := m.page == networkPage && m.showProxyExclusions
-	if key == quit && (m.modalOpen() || exclusions) {
+	if key == quit && (m.modalOpen() || exclusions || (m.page == routingPage && m.routingStage != 0)) {
 		key = "esc"
 	}
 	if key == "ctrl+c" || key == quit {
@@ -155,10 +155,10 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 			}
 			m.scroll(delta)
 			return nil
-		case "[", "]":
+		case "tab", "shift+tab", "[", "]":
 			tabs := m.proxyTabs()
 			i := m.proxyTabIndex(tabs)
-			if key == "[" {
+			if key == "[" || key == "shift+tab" {
 				i = (i + len(tabs) - 1) % len(tabs)
 			} else {
 				i = (i + 1) % len(tabs)
@@ -174,19 +174,11 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 	case m.settings.key("help"):
 		m.help = true
 		return nil
-	case "tab", "shift+tab":
-		i := menuIndex(m.page)
-		delta := 1
-		if key == "shift+tab" {
-			delta = -1
-		}
-		m.changePage(menuSections[(i+delta+len(menuSections))%len(menuSections)].pages[0])
-		return nil
-	case "[", "]":
+	case "tab", "shift+tab", "[", "]":
 		tabs := menuSections[menuIndex(m.page)].pages
 		if len(tabs) > 1 {
 			delta := 1
-			if key == "[" {
+			if key == "shift+tab" || key == "[" {
 				delta = -1
 			}
 			m.changePage(tabs[(slices.Index(tabs, m.page)+delta+len(tabs))%len(tabs)])
@@ -326,6 +318,8 @@ func (m *model) handleKey(key, value string) tea.Cmd {
 			m.lang = lang
 			m.feedback = m.lang.Text("Language saved")
 		}
+	case routingPage:
+		return m.routingKey(key)
 	case profiles:
 		switch key {
 		case "e", "d", "s":
@@ -531,6 +525,7 @@ func (m *model) testAllNodes() tea.Cmd {
 }
 
 func (m *model) changePage(next page) {
+	m.routingStage = 0
 	m.page, m.cursor, m.filter = next, 0, ""
 	m.showProxyExclusions = false
 	m.connectionSelection = nil
@@ -644,6 +639,8 @@ func (m *model) scroll(delta int) {
 	}
 	var n int
 	switch m.page {
+	case routingPage:
+		n = m.routingRowCount()
 	case profiles:
 		n = len(m.snapshot.profiles)
 	case proxies:
@@ -775,6 +772,9 @@ func (m *model) activate(h hit) tea.Cmd {
 		m.cursor = h.index
 	case hitRow:
 		m.cursor = h.index
+		if m.page == routingPage {
+			return m.routingKey("enter")
+		}
 		if m.page == dnsPage {
 			return m.dnsPageKey("enter")
 		}
@@ -873,6 +873,16 @@ func (m *model) replayInputEdit(redo bool) {
 }
 
 func (m *model) formKey(key, value string) tea.Cmd {
+	if m.form == "Rule value" && key == "enter" {
+		m.routingEdit.Value = strings.TrimSpace(string(m.input))
+		m.closeForm()
+		m.routingStage, m.cursor = 2, 0
+		if i := slices.Index(m.routingDraft.Targets, m.routingEdit.Target); i >= 0 {
+			m.cursor = i
+		}
+		return nil
+	}
+
 	switch key {
 	case "ctrl+z":
 		m.replayInputEdit(false)

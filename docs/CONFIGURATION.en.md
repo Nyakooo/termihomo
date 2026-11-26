@@ -45,6 +45,20 @@ keys:
 
 Key bindings must not conflict with reserved interface keys. Invalid settings are reported when the TUI starts.
 
+### Routing rules
+
+Open **Profile → Routing rules** to manage custom rules for the active profile without editing the generated `mihomo/config.yaml`.
+
+- `a`: choose `DOMAIN`, `DOMAIN-SUFFIX`, `IP-CIDR` (IPv4), or `DST-PORT`, enter the value, then select a configured proxy group, `DIRECT`, or `REJECT`.
+- `e` / Enter edits, `d` deletes, Space enables/disables, and `Alt+↑/↓` changes custom rule priority. Buttons and lists support the mouse.
+- Original rules remain read-only and in their original order. Use `c` to copy a supported type into a custom rule, preserving the IP-CIDR `no-resolve` option. Other unsupported options are explicitly rejected. Duplicate custom matchers are rejected.
+- `Ctrl+S` (**Save and apply**) validates the complete configuration before saving and hot applying it. Failures show the error and keep your draft. Normal application failures restore the previous configuration and runtime settings. If a communication failure leaves the running state unconfirmed, the error asks you to restart the core; it does not automatically close all connections.
+- `Ctrl+R` resets the draft to the active profile's saved rules. Stale drafts cannot overwrite a switched or updated profile.
+
+Rules are stored in each profile's `custom_rules` field and prepended to the original rules in list order. Disabled rules remain saved but are omitted from the generated rules. Restarting, subscription updates, and switching profiles retain each profile's own rules. If an update removes a referenced proxy group, the update fails and keeps the previous profile; adjust the custom rule target first.
+
+For example, to route a service through a proxy group, add a `DOMAIN` rule for `mail.example.com`, select the desired group from the target list, and select a node in that group on the Proxies page. Do not include a port in domain values. Save and apply, choose **Rule mode** on the overview, and reconnect the affected application or service. Rules participate in routing only in Rule mode; existing connections may keep their previous route.
+
 ### General toggles
 
 Press Enter on a Boolean setting in **Tools → General** to toggle it.

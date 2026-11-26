@@ -30,12 +30,15 @@ const (
 	generalPage
 	dnsPage
 	networkPage
+	routingPage
 )
 
-var pages = []string{"Overview", "Proxies", "Profile", "Logs", "Core", "Connections", "Language", "General", "DNS", "Network"}
+var pages = []string{"Overview", "Proxies", "Profile", "Logs", "Core", "Connections", "Language", "General", "DNS", "Network", "Routing rules"}
 var levels = []string{"debug", "info", "warning", "error"}
 
 type snapshot struct {
+	routing                             core.RoutingRules
+	routingErr                          error
 	toolSettings                        map[string]string
 	toolSettingsErr                     error
 	status                              core.Status
@@ -69,9 +72,10 @@ type clipboardMsg struct {
 type profileSpin uint64
 
 type operation struct {
-	label  string
-	detail string
-	err    error
+	routing bool
+	label   string
+	detail  string
+	err     error
 }
 
 type hitKind int
@@ -123,6 +127,14 @@ type formHistory struct {
 }
 
 type model struct {
+	routingDraft  core.RoutingRules
+	routingLoaded bool
+	routingDirty  bool
+	routingStage  int
+	routingIndex  int
+	routingEdit   core.CustomRule
+	routingError  string
+
 	trayAvailable       bool
 	trayExitToken       string
 	exitPending         bool
@@ -348,6 +360,7 @@ func (m *model) refresh() tea.Cmd {
 		reads.Go(func() {
 			s.profile, s.profiles, s.profileErr = m.manager.ProfileLibrary()
 			s.toolSettings, s.toolSettingsErr = m.manager.ToolSettings()
+			s.routing, s.routingErr = m.manager.RoutingRules()
 		})
 		runtime := m.manager.ReadRuntime(ctx)
 		s.status, s.err, s.overview = runtime.Status, runtime.Err, runtime.Overview
@@ -374,6 +387,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch msg := msg.(type) {
+
 	case trayExitMsg:
 		m.exitPending = true
 		if !m.busy {
@@ -484,6 +498,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, profileSpinTick(m.profileSpinID)
 		}
 	case operation:
+		if msg.routing {
+			if msg.err == nil {
+				m.routingDirty = false
+				m.routingError = ""
+			} else if errors.Is(msg.err, context.Canceled) {
+				m.routingError = ""
+			} else {
+				m.routingError = m.lang.Error(msg.err)
+			}
+		}
 		profileCancelled := m.cancelProfile != nil && errors.Is(msg.err, context.Canceled)
 		if m.cancelProfile != nil {
 			m.cancelProfile()
@@ -606,6 +630,11 @@ func (m *model) applySnapshot(next snapshot) {
 		next.proxies, next.proxyErr = m.snapshot.proxies, nil
 	}
 	m.updateRequestSamples(next)
+	if next.routingErr == nil && (!m.routingLoaded || (!m.routingDirty && m.routingStage == 0 && m.form != "Rule value")) {
+		m.routingDraft = next.routing
+		m.routingDraft.Custom = slices.Clone(next.routing.Custom)
+		m.routingLoaded = true
+	}
 	m.snapshot = next
 	m.requests.cache = nil
 	if focusOnLoad {

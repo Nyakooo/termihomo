@@ -294,7 +294,7 @@ func (m Manager) checkRestartConfig(ctx context.Context, previous instance, addr
 	if err != nil {
 		return err
 	}
-	candidate, err := m.renderConfig(current.YAML, previous)
+	candidate, err := m.renderProfile(current, previous)
 	if err != nil {
 		return err
 	}

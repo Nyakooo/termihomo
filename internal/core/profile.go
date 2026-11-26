@@ -64,6 +64,7 @@ type ProfileInfo struct {
 }
 
 type profile struct {
+	CustomRules []CustomRule `json:"custom_rules,omitempty"`
 	ProfileInfo
 	Nodes int    `json:"nodes,omitempty"`
 	URL   string `json:"url,omitempty"`
@@ -460,6 +461,10 @@ func (m Manager) applyProfile(ctx context.Context, next profile) error {
 }
 
 func (m Manager) applyProfileCandidate(ctx context.Context, next profile, validated bool) error {
+	return m.commitProfileCandidate(ctx, next, validated, m.failProfileChange, false)
+}
+
+func (m Manager) commitProfileCandidate(ctx context.Context, next profile, validated bool, rollback func(instance, profileChange, error) error, rulesOnly bool) error {
 	if _, err := os.Stat(m.binary()); errors.Is(err, os.ErrNotExist) {
 		return i18n.Message("install Mihomo before importing a profile")
 	} else if err != nil {
@@ -485,7 +490,7 @@ func (m Manager) applyProfileCandidate(ctx context.Context, next profile, valida
 	if state.PID == 0 {
 		renderState = validationInstance()
 	}
-	candidate, err := m.renderConfig(next.YAML, renderState)
+	candidate, err := m.renderProfile(next, renderState)
 	if err != nil {
 		return err
 	}
@@ -501,7 +506,9 @@ func (m Manager) applyProfileCandidate(ctx context.Context, next profile, valida
 	if next.Added.IsZero() {
 		next.Added = next.addedAt()
 	}
-	next.Updated = time.Now()
+	if !rulesOnly {
+		next.Updated = time.Now()
+	}
 	if next.Added.IsZero() {
 		next.Added = next.Updated
 	}
@@ -541,10 +548,10 @@ func (m Manager) applyProfileCandidate(ctx context.Context, next profile, valida
 	}
 	reportProfileProgress(ctx, "Applying profile")
 	if err := m.applyLiveConfig(ctx, state, candidate, live); err != nil {
-		return m.failProfileChange(state, pending, err)
+		return rollback(state, pending, err)
 	}
 	if err := atomicWrite(m.profilePath(), record); err != nil {
-		return m.failProfileChange(state, pending, err)
+		return rollback(state, pending, err)
 	}
 	m.recordLifecycle("Profile updated")
 	return os.Remove(m.pendingPath())

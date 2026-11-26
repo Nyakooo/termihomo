@@ -41,6 +41,7 @@ func loadSettings(dir string) (settings, error) {
 		"ctrl+c": true, "ctrl+p": true, "ctrl+t": true, "ctrl+b": true, "ctrl+f": true, "ctrl+u": true, "ctrl+d": true,
 		"pgup": true, "pgdown": true, "g": true, "home": true, "end": true, "h": true, "l": true,
 		"f": true, "t": true, "[": true, "]": true, "e": true, "w": true, "b": true, "m": true, "d": true, "p": true, "c": true, "i": true, "a": true, "x": true, "ctrl+r": true, "u": true,
+		"ctrl+s": true, "alt+up": true, "alt+down": true, "space": true,
 		"1": true, "2": true, "3": true, "4": true, "5": true,
 	}
 	// Older settings may contain the retired single-node test binding.

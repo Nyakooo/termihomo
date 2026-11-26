@@ -149,7 +149,7 @@ func (m Manager) prepareConfig(ctx context.Context, state instance) error {
 	if err != nil {
 		return err
 	}
-	body, err := m.renderConfig(profile.YAML, state)
+	body, err := m.renderProfile(profile, state)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (m Manager) CheckConfig(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		body, err := m.renderConfig(current.YAML, validationInstance())
+		body, err := m.renderProfile(current, validationInstance())
 		if err != nil {
 			return err
 		}
@@ -267,7 +267,7 @@ func (m Manager) Reload(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		candidate, err := m.renderConfig(profile.YAML, state)
+		candidate, err := m.renderProfile(profile, state)
 		if err != nil {
 			return err
 		}

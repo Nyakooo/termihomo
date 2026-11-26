@@ -188,7 +188,7 @@ func (m Manager) SetToolSetting(ctx context.Context, key, input string) error {
 			if err != nil {
 				return err
 			}
-			body, err := renderConfigWithSettings(current.YAML, instance{
+			body, err := renderProfileWithSettings(current, instance{
 				Controller: "127.0.0.1:9090", Proxy: "127.0.0.1:7890", Secret: "validation-only",
 			}, settings)
 			if err != nil {
